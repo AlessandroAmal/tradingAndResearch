@@ -1,0 +1,131 @@
+# =====================================================================
+# Trading & Research Command Center — main configuration
+# ---------------------------------------------------------------------
+# Hard rule (CLAUDE.md §3): the trading universe, holdings, account size
+# and every risk limit live HERE, not in code. Edit freely.
+#
+# NOTE: the project brief (`trading_command_center_brief.md`) was not
+# present in the repo when this file was generated, so the universe and
+# holdings below are SENSIBLE PLACEHOLDERS, not the real §4 list.
+# Replace them with your actual watchlist/holdings.
+#
+# Environment variables can override selected values at runtime — see
+# `worker/app/config.py` (e.g. APP_UNIVERSE, APP_ACCOUNT_SIZE).
+# =====================================================================
+
+base_currency: USD
+
+# --- Account ---------------------------------------------------------
+account:
+  # Total account size in base_currency. Used by the (Phase 3) risk/sizing math.
+  size: 100000
+  broker_default: "Directa"
+
+# --- Risk limits (used by Phase 3 sizing math; configurable now) -----
+risk:
+  # Max % of account risked on a single position (entry -> stop).
+  max_risk_per_trade_pct: 1.0
+  # Max % of account exposed across all open positions.
+  max_total_exposure_pct: 30.0
+  # Max number of concurrent open positions.
+  max_open_positions: 8
+  # Hard cap on how far out a position deadline may be set (business rule).
+  max_position_deadline_days: 21
+  # Default ATR multiple used when suggesting stops.
+  default_atr_multiple: 2.0
+
+# --- Trading universe (watchlist) — brief §4 ------------------------
+# `symbol` is the yfinance ticker. `sleeve` groups instruments
+# (macro|equity|commodity|energy|gauge). `tradeable_on` is informational.
+# `traded: false` marks display-only gauges (e.g. VIX) — never traded.
+# asset_class: equity | etf | index | fx | commodity | crypto
+universe:
+  # Macro core
+  - symbol: "^NDX"          # Nasdaq 100 / "US Tech 100"
+    name: "Nasdaq 100"
+    asset_class: index
+    sleeve: macro
+    tradeable_on: "Fineco (CFD/futures, KO options)"
+  - symbol: "GC=F"          # Gold (XAU/USD)
+    name: "Gold"
+    asset_class: commodity
+    sleeve: macro
+    tradeable_on: "Fineco (CFD/futures, KO options)"
+  - symbol: "EURUSD=X"
+    name: "EUR/USD"
+    asset_class: fx
+    sleeve: macro
+    tradeable_on: "Fineco (CFD)"
+  # Equities (CEO tracciati)
+  - symbol: "NVDA"
+    name: "NVIDIA"
+    asset_class: equity
+    sleeve: equity
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "TSLA"
+    name: "Tesla"
+    asset_class: equity
+    sleeve: equity
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "GOOGL"
+    name: "Alphabet"
+    asset_class: equity
+    sleeve: equity
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  # China / commodities
+  - symbol: "HG=F"
+    name: "Copper"
+    asset_class: commodity
+    sleeve: commodity
+    tradeable_on: "Fineco (CFD/futures, KO options)"
+  # Sessione europea (opzionale)
+  - symbol: "^GDAXI"        # opzionale; in alt. ^STOXX50E (Euro Stoxx 50)
+    name: "DAX 40"
+    asset_class: index
+    sleeve: macro
+    tradeable_on: "Fineco (CFD/futures, KO options)"
+  # Energy — sleeve specialistico (vedi M5b)
+  - symbol: "NG=F"
+    name: "Natural Gas (Henry Hub)"
+    asset_class: commodity
+    sleeve: energy
+    tradeable_on: "Fineco (CFD/futures, KO options)"
+  # Gauge dashboard — NON tradato
+  - symbol: "^VIX"
+    name: "VIX"
+    asset_class: index
+    sleeve: gauge
+    traded: false
+    tradeable_on: "solo display"
+
+# --- Holdings (currently owned; manual/CSV/Directa-synced later) -----
+# These are NOT trade positions — they are long-term holdings to track.
+# quantity/avg_price are entered by the user; the seed preserves any
+# values already set and only refreshes metadata (it never zeroes them).
+holdings:
+  - { symbol: "GOOGL",   name: "Alphabet",         asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "MSFT",    name: "Microsoft",        asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "AVGO",    name: "Broadcom",         asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "VRT",     name: "Vertiv",           asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "NVO",     name: "Novo Nordisk ADR", asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "SPGI",    name: "S&P Global",       asset_class: equity,    quantity: 0, avg_price: null }
+  - { symbol: "GC=F",    name: "Gold",             asset_class: commodity, quantity: 0, avg_price: null }
+  - { symbol: "SI=F",    name: "Silver",           asset_class: commodity, quantity: 0, avg_price: null }
+  - { symbol: "HG=F",    name: "Copper",           asset_class: commodity, quantity: 0, avg_price: null }
+  - { symbol: "BTC-USD", name: "Bitcoin",          asset_class: crypto,    quantity: 0, avg_price: null }
+
+# --- Ingestion scheduling (cron; overridable via env) ----------------
+schedule:
+  prices_cron: "*/15 * * * *"      # every 15 minutes
+  calendar_cron: "0 6 * * *"       # daily at 06:00 local
+
+# --- Provider selection (swap implementations without code changes) --
+providers:
+  prices: yfinance        # PriceProvider implementation
+  calendar: fmp           # CalendarProvider implementation
+
+# --- Price history / indicators --------------------------------------
+indicators:
+  history_days: 250        # lookback pulled for MA/ATR computation
+  ma_periods: [20, 50, 200]
+  atr_period: 14
