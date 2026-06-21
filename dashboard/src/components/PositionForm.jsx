@@ -1,5 +1,18 @@
 import { useMemo, useState } from 'react'
 import { insertPosition } from '../api/data'
+import InfoTip from './InfoTip'
+import { FIELD_HELP_BY_KEY } from '../data/guide'
+
+// Field caption + inline info tooltip, sharing the Guide's texts.
+function FieldLabel({ field, children }) {
+  const help = FIELD_HELP_BY_KEY[field]
+  return (
+    <span className="field-label">
+      {children}
+      {help && <InfoTip text={help.text} label={help.label} />}
+    </span>
+  )
+}
 
 const MAX_DEADLINE_DAYS = 21 // business rule: deadline within 3 weeks
 
@@ -84,7 +97,7 @@ export default function PositionForm({ instruments, defaultBroker, onSaved }) {
 
       <form className="pos-form" onSubmit={onSubmit}>
         <label>
-          Instrument
+          <FieldLabel field="symbol">Instrument</FieldLabel>
           <select value={form.symbol} onChange={(e) => set('symbol', e.target.value)}>
             <option value="">— select —</option>
             {instruments.map((i) => (
@@ -96,7 +109,7 @@ export default function PositionForm({ instruments, defaultBroker, onSaved }) {
         </label>
 
         <label>
-          Side
+          <FieldLabel field="side">Side</FieldLabel>
           <select value={form.side} onChange={(e) => set('side', e.target.value)}>
             <option value="long">long</option>
             <option value="short">short</option>
@@ -104,43 +117,43 @@ export default function PositionForm({ instruments, defaultBroker, onSaved }) {
         </label>
 
         <label>
-          Size
+          <FieldLabel field="size">Size</FieldLabel>
           <input type="number" step="any" min="0" value={form.size}
             onChange={(e) => set('size', e.target.value)} />
         </label>
 
         <label>
-          Entry
+          <FieldLabel field="entry">Entry</FieldLabel>
           <input type="number" step="any" min="0" value={form.entry}
             onChange={(e) => set('entry', e.target.value)} />
         </label>
 
         <label>
-          Stop
+          <FieldLabel field="stop">Stop</FieldLabel>
           <input type="number" step="any" min="0" value={form.stop}
             onChange={(e) => set('stop', e.target.value)} />
         </label>
 
         <label>
-          Target
+          <FieldLabel field="target">Target</FieldLabel>
           <input type="number" step="any" min="0" value={form.target}
             onChange={(e) => set('target', e.target.value)} />
         </label>
 
         <label>
-          Deadline (≤ 3 weeks)
+          <FieldLabel field="deadline">Deadline (≤ 3 weeks)</FieldLabel>
           <input type="date" value={form.deadline} min={todayISO()} max={maxDeadline}
             onChange={(e) => set('deadline', e.target.value)} />
         </label>
 
         <label>
-          Broker
+          <FieldLabel field="broker">Broker</FieldLabel>
           <input type="text" value={form.broker}
             onChange={(e) => set('broker', e.target.value)} />
         </label>
 
         <label className="full">
-          Thesis
+          <FieldLabel field="thesis">Thesis</FieldLabel>
           <textarea rows="3" value={form.thesis}
             onChange={(e) => set('thesis', e.target.value)} />
         </label>

@@ -112,8 +112,63 @@ button:disabled { opacity: 0.6; cursor: default; }
 .badge.long { background: rgba(34,197,94,0.15); color: var(--pos); }
 .badge.short { background: rgba(239,68,68,0.15); color: var(--neg); }
 
+/* nav */
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nav { display: inline-flex; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.nav-btn {
+  background: transparent; color: var(--muted); border: 0; border-radius: 6px;
+  padding: 6px 12px; font-weight: 600; cursor: pointer;
+}
+.nav-btn.active { background: var(--panel-2); color: var(--text); outline: 1px solid var(--accent); }
+
+/* info tooltip */
+.field-label { display: inline-flex; align-items: center; gap: 6px; }
+.infotip { position: relative; display: inline-flex; cursor: help; }
+.infotip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; font-size: 10px; font-weight: 700;
+  font-style: italic; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.infotip-bubble {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20;
+  width: max-content; max-width: 260px; padding: 8px 10px;
+  background: #0f1830; color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  font-size: 12px; font-weight: 400; line-height: 1.4; font-style: normal;
+  text-transform: none; letter-spacing: normal;
+  opacity: 0; visibility: hidden; transition: opacity 0.12s ease;
+}
+.infotip:hover .infotip-bubble,
+.infotip:focus .infotip-bubble,
+.infotip:focus-within .infotip-bubble { opacity: 1; visibility: visible; }
+
+/* guide page */
+.guide { display: flex; flex-direction: column; gap: 16px; }
+.guide-dl { margin: 0; }
+.guide-row { display: grid; grid-template-columns: 200px 1fr; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.guide-row:first-child { border-top: 0; }
+.guide-row dt { font-weight: 700; }
+.guide-row dd { margin: 0; color: var(--text); }
+.banner.note { background: rgba(59,130,246,0.10); border: 1px solid var(--accent); margin-top: 12px; }
+
+.guide-universe { list-style: none; margin: 0; padding: 0; }
+.guide-inst { padding: 10px 0; border-top: 1px solid var(--border); }
+.guide-inst:first-child { border-top: 0; }
+.guide-inst-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.guide-inst-head .name { color: var(--muted); }
+.guide-why { margin-top: 4px; }
+.pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); }
+.sleeve-macro { color: #60a5fa; }
+.sleeve-equity { color: #34d399; }
+.sleeve-commodity { color: #fbbf24; }
+.sleeve-energy { color: #f97316; }
+.sleeve-gauge { color: var(--muted); }
+.pill-gauge { color: var(--neg); border-color: rgba(239,68,68,0.4); }
+
 /* responsive: stack on phones */
 @media (max-width: 1000px) {
   .grid { grid-template-columns: 1fr; }
   .pos-form { grid-template-columns: 1fr; }
+  .guide-row { grid-template-columns: 1fr; gap: 2px; }
 }

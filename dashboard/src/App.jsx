@@ -12,6 +12,7 @@ import InstrumentDetail from './components/InstrumentDetail'
 import Catalysts from './components/Catalysts'
 import PositionForm from './components/PositionForm'
 import PositionsList from './components/PositionsList'
+import Guide from './pages/Guide'
 
 const REFRESH_MS = 60_000
 
@@ -24,6 +25,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [nowMs, setNowMs] = useState(Date.now())
+  const [view, setView] = useState('dashboard') // 'dashboard' | 'guide' (state only)
 
   // tick for live countdowns (state only — no browser storage)
   useEffect(() => {
@@ -89,12 +91,32 @@ export default function App() {
             Read-only cockpit · information &amp; risk management · not financial advice
           </p>
         </div>
-        <button onClick={loadAll} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="topbar-actions">
+          <nav className="nav" aria-label="Sezioni">
+            <button
+              className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setView('dashboard')}
+              aria-current={view === 'dashboard' ? 'page' : undefined}
+            >
+              Dashboard
+            </button>
+            <button
+              className={`nav-btn ${view === 'guide' ? 'active' : ''}`}
+              onClick={() => setView('guide')}
+              aria-current={view === 'guide' ? 'page' : undefined}
+            >
+              Guida
+            </button>
+          </nav>
+          {view === 'dashboard' && (
+            <button onClick={loadAll} disabled={loading}>
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          )}
+        </div>
       </header>
 
-      {!isConfigured && (
+      {view === 'dashboard' && !isConfigured && (
         <div className="banner error">
           Supabase is not configured. Copy <code>dashboard/.env.example</code> to{' '}
           <code>.env</code> and set <code>VITE_SUPABASE_URL</code> /{' '}
@@ -102,6 +124,9 @@ export default function App() {
         </div>
       )}
 
+      {view === 'guide' ? (
+        <Guide />
+      ) : (
       <main className="grid">
         <div className="col-left">
           <Watchlist
@@ -139,6 +164,7 @@ export default function App() {
           </section>
         </div>
       </main>
+      )}
     </div>
   )
 }
