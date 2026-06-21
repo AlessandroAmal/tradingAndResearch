@@ -86,3 +86,23 @@ class Storage(Protocol):
     # --- briefings (AI output) ------------------------------------
     def insert_briefing(self, briefing: dict[str, Any]) -> dict[str, Any]:
         ...
+
+    # --- key figures (Phase 2 / M4) -------------------------------
+    def upsert_figure_statements(self, rows: list[dict[str, Any]]) -> None:
+        """Insert figure statements, deduped by `url` (ignore existing).
+
+        Canonical columns: figure, role, statement (text), source, url,
+        stated_at; affected_instruments/why_it_matters/processed_at filled
+        by the AI impact-mapping job.
+        """
+        ...
+
+    def list_unprocessed_figure_statements(self, limit: int) -> list[dict[str, Any]]:
+        """Return newest statements not yet impact-mapped (processed_at IS NULL)."""
+        ...
+
+    def update_figure_impact(
+        self, statement_id: str, affected_instruments: list[str], why_it_matters: str
+    ) -> None:
+        """Store AI impact + rationale and stamp processed_at."""
+        ...

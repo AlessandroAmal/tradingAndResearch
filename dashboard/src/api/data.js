@@ -73,3 +73,13 @@ export async function fetchNewsForInstrument(symbol, limit = 8) {
     .order('published_at', { ascending: false })
     .limit(limit)
 }
+
+// Recent key-figure statements with their AI impact mapping.
+export async function fetchKeyFigures(limit = 15) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('figure_statements')
+    .select('id, figure, role, statement, source, url, stated_at, affected_instruments, why_it_matters')
+    .order('stated_at', { ascending: false })
+    .limit(limit)
+}

@@ -8,6 +8,8 @@ Usage (from worker/):
     python -m app.main tag               # run AI tagging once
     python -m app.main briefing-morning  # generate a morning briefing once
     python -m app.main briefing-intraday # generate an intraday briefing once
+    python -m app.main figures           # run key-figures ingestion once (M4)
+    python -m app.main impact            # run AI impact mapping once (M4)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -21,12 +23,15 @@ from .ai import build_ai_client
 from .config import load_config
 from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
+from .ingestion.figures_job import run_figures_ingestion
+from .ingestion.impact_job import run_impact_mapping
 from .ingestion.news_job import run_news_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
 from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger, setup_logging
 from .providers.calendar import build_calendar_provider
+from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
 from .providers.prices import build_price_provider
 from .scheduler import build_scheduler
@@ -77,6 +82,18 @@ def _cmd_briefing_intraday(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_figures(cfg, storage) -> int:
+    source = build_figure_source(cfg)
+    res = run_figures_ingestion(cfg, storage, source)
+    return 0 if res["failed"] == 0 else 1
+
+
+def _cmd_impact(cfg, storage) -> int:
+    ai = build_ai_client()
+    res = run_impact_mapping(cfg, storage, ai)
+    return 0 if res["failed"] == 0 else 1
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -96,6 +113,8 @@ COMMANDS = {
     "tag": _cmd_tag,
     "briefing-morning": _cmd_briefing_morning,
     "briefing-intraday": _cmd_briefing_intraday,
+    "figures": _cmd_figures,
+    "impact": _cmd_impact,
     "run": _cmd_run,
 }
 

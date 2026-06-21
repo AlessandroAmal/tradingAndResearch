@@ -57,6 +57,7 @@ class AppConfig:
     ai: dict[str, Any] = field(default_factory=dict)
     news: dict[str, Any] = field(default_factory=dict)
     themes: list[str] = field(default_factory=list)
+    figures: list[dict[str, Any]] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # --- convenience accessors -------------------------------------
@@ -98,6 +99,14 @@ class AppConfig:
             self.schedule.get("briefing_intraday_cron", "0 13,18 * * *"),
         )
 
+    @property
+    def figures_cron(self) -> str:
+        return os.getenv("FIGURES_CRON", self.schedule.get("figures_cron", "*/45 * * * *"))
+
+    @property
+    def impact_cron(self) -> str:
+        return os.getenv("IMPACT_CRON", self.schedule.get("impact_cron", "*/45 * * * *"))
+
     # --- AI config (models configurable via config + env) ----------
     @property
     def ai_enabled(self) -> bool:
@@ -115,6 +124,14 @@ class AppConfig:
         return os.getenv(
             "ANTHROPIC_TAGGING_MODEL",
             self.ai.get("tagging_model", "claude-haiku-4-5-20251001"),
+        )
+
+    @property
+    def figures_model(self) -> str:
+        # Impact mapping defaults to the (cheap) tagging model unless set.
+        return os.getenv(
+            "ANTHROPIC_FIGURES_MODEL",
+            self.ai.get("figures_model", self.tagging_model),
         )
 
 
@@ -157,5 +174,6 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         ai=dict(data.get("ai", {})),
         news=dict(data.get("news", {})),
         themes=list(data.get("themes", [])),
+        figures=list(data.get("figures", [])),
         raw=data,
     )

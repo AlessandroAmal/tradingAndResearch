@@ -13,11 +13,14 @@ from .ai import build_ai_client
 from .config import AppConfig
 from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
+from .ingestion.figures_job import run_figures_ingestion
+from .ingestion.impact_job import run_impact_mapping
 from .ingestion.news_job import run_news_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger
 from .providers.calendar import build_calendar_provider
+from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
 from .providers.prices import build_price_provider
 from .storage import Storage
@@ -30,6 +33,7 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
     price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
     cal_provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"))
     news_providers = build_news_providers(cfg)
+    figure_source = build_figure_source(cfg)
 
     def _prices() -> None:
         try:
@@ -49,6 +53,12 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         except Exception as exc:  # noqa: BLE001
             log.error("News job crashed: %s", exc)
 
+    def _figures() -> None:
+        try:
+            run_figures_ingestion(cfg, storage, figure_source)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Figures job crashed: %s", exc)
+
     sched.add_job(
         _prices,
         CronTrigger.from_crontab(cfg.prices_cron),
@@ -67,6 +77,13 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         _news,
         CronTrigger.from_crontab(cfg.news_cron),
         id="news_ingestion",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _figures,
+        CronTrigger.from_crontab(cfg.figures_cron),
+        id="figures_ingestion",
         max_instances=1,
         coalesce=True,
     )
@@ -98,9 +115,19 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
             except Exception as exc:  # noqa: BLE001
                 log.error("Intraday briefing crashed: %s", exc)
 
+        def _impact() -> None:
+            try:
+                run_impact_mapping(cfg, storage, ai)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Impact mapping job crashed: %s", exc)
+
         sched.add_job(
             _tagging, CronTrigger.from_crontab(cfg.tagging_cron),
             id="ai_tagging", max_instances=1, coalesce=True,
+        )
+        sched.add_job(
+            _impact, CronTrigger.from_crontab(cfg.impact_cron),
+            id="ai_impact", max_instances=1, coalesce=True,
         )
         sched.add_job(
             _briefing_morning, CronTrigger.from_crontab(cfg.briefing_morning_cron),

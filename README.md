@@ -18,7 +18,7 @@ catalysts, and a manual position-entry form.
 
 ```
 config/          # config.yaml — universe, holdings, risk, themes, news, AI (NOT hardcoded)
-db/migrations/   # 0001…0004 — schema (brief §7 tables) + news/AI columns
+db/migrations/   # 0001…0006 — schema (brief §7 tables) + news/AI + key-figure columns
 worker/          # Python: providers (prices/calendar/news), AI layer, jobs, scheduler, storage
 dashboard/       # React + Vite frontend (reads Supabase; no browser storage)
 .env.example     # backend/worker env template
@@ -86,17 +86,20 @@ python -m app.main news              # fetch news once (GDELT + RSS)
 python -m app.main tag               # AI-tag new news items (Claude)
 python -m app.main briefing-morning  # generate a morning briefing
 python -m app.main briefing-intraday # generate an intraday briefing
+python -m app.main figures           # fetch key-figure statements (M4)
+python -m app.main impact            # AI impact-map new statements (M4)
 
 # or run the scheduler (blocking; cron cadence from config.yaml):
 python -m app.main run
 ```
 
-Schedules (overridable via env, e.g. `PRICES_CRON`, `NEWS_CRON`, …):
+Schedules (overridable via env, e.g. `PRICES_CRON`, `NEWS_CRON`, `FIGURES_CRON`, …):
 - prices: every 15 min — `*/15 * * * *`
 - calendar: daily 06:00 — `0 6 * * *`
 - news + AI tagging: every 30 min — `*/30 * * * *`
 - morning briefing: daily 06:30 — `30 6 * * *`
 - intraday briefings: 13:00 & 18:00 — `0 13,18 * * *`
+- key figures + impact mapping: every 45 min — `*/45 * * * *`
 
 Ingestion is resilient: one symbol, feed, or the Claude API being down is
 logged and skipped, the rest proceeds, and the dashboard degrades gracefully.
@@ -127,6 +130,8 @@ The dashboard reads from Supabase and shows:
   ATR(14), and a **"recent relevant news"** panel (AI-tagged for that instrument)
 - **Briefing** panel: latest morning + intraday AI briefing, theme-tagged, with the
   uncertainty caveat always shown
+- **Key figures** feed: tracked figures' statements with AI-mapped affected
+  instruments and a one-line "why it matters"
 - **Next catalysts**: upcoming events with countdown
 - **New position** form (instrument, side, size, entry, stop, target, deadline
   ≤ 3 weeks, broker, thesis) — saved to `positions` for tracking only.
@@ -153,10 +158,11 @@ worker ingests.
 
 ---
 
-## Phase 2 — Intelligence (M3: news + AI briefings)
+## Phase 2 — Intelligence (M3 news + briefings, M4 key figures)
 
-Adds news ingestion, per-item AI tagging, and AI briefings. **Apply migration
-`0004_news_ai.sql`** (in addition to 0001–0003) and set `ANTHROPIC_API_KEY`.
+Adds news ingestion, per-item AI tagging, AI briefings, and a key-figures tracker.
+**Apply migrations `0004`–`0006`** (in addition to 0001–0003) and set
+`ANTHROPIC_API_KEY`.
 
 - **News** behind a `NewsProvider` interface: **GDELT** (free, no key) +
   configurable **RSS** feeds (`config.yaml → news.rss.feeds`). NewsAPI is
@@ -171,6 +177,14 @@ Adds news ingestion, per-item AI tagging, and AI briefings. **Apply migration
   enforces brevity, a scannable theme-tagged format, and the **honesty rule** —
   every briefing carries an `uncertainty_note` and never states outcomes as
   guaranteed (CLAUDE.md §5).
+- **Key figures (M4)** behind a `FigureSource` interface: per-figure Google News
+  RSS search + optional official press feed (e.g. the Fed press feed for Powell),
+  reusing the free news mechanics. Statements are deduped into `figure_statements`
+  (canonical columns: `figure`, `statement`, `stated_at`, `source`, `url`). The AI
+  **impact-mapping** job (cheap model, default Haiku) returns **only**
+  `{affected_instruments[], why_it_matters}`, schema-constrained to the universe,
+  empty when there's no clear impact, and phrased as possible influence — never a
+  prediction. Figures are configurable in `config.yaml → figures:`.
 
 Models are configurable (`config.yaml → ai:` or `ANTHROPIC_*` env). Claude is
 **only ever called server-side** in the worker.
@@ -183,12 +197,13 @@ $3/$15 per 1M). Actual cost scales with news volume.
 | Workload | Volume/day | Est. cost |
 |---|---|---|
 | Tagging (Haiku) | ~150 items × ~250 in / ~30 out tok | ~$0.06 |
+| Impact mapping (Haiku) | ~80 statements × ~250 in / ~40 out tok | ~$0.04 |
 | Briefings (Sonnet) | 3 runs (1 morning + 2 intraday) × ~2.4k in / ~1.2k out | ~$0.08 |
-| **Total** | | **~$0.15/day (~$5/month)** |
+| **Total** | | **~$0.18/day (~$5–6/month)** |
 
-Even a busy day (~400 tagged items) stays well under ~$0.30/day. Levers:
-`ai.tagging_max_items`, briefing frequency/length, or the Batches API (−50% on
-tagging). **Verify current model pricing before relying on these numbers.**
+Even a busy day stays well under ~$0.40/day. Levers: `ai.tagging_max_items`,
+`ai.figures_max_items`, briefing frequency/length, or the Batches API (−50% on
+the Haiku jobs). **Verify current model pricing before relying on these numbers.**
 
 ---
 

@@ -178,6 +178,38 @@ class SupabaseStorage:
         res = self._client.table("briefings").insert(briefing).execute()
         return res.data[0] if res.data else {}
 
+    # --- key figures ----------------------------------------------
+    def upsert_figure_statements(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        self._client.table("figure_statements").upsert(
+            rows, on_conflict="url", ignore_duplicates=True
+        ).execute()
+        log.info("Upserted %d figure statements", len(rows))
+
+    def list_unprocessed_figure_statements(self, limit: int) -> list[dict[str, Any]]:
+        return (
+            self._client.table("figure_statements")
+            .select("id, figure, role, statement")
+            .is_("processed_at", "null")
+            .order("stated_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def update_figure_impact(
+        self, statement_id: str, affected_instruments: list[str], why_it_matters: str
+    ) -> None:
+        self._client.table("figure_statements").update(
+            {
+                "affected_instruments": affected_instruments,
+                "why_it_matters": why_it_matters,
+                "processed_at": "now()",
+            }
+        ).eq("id", statement_id).execute()
+
 
 def build_storage() -> SupabaseStorage:
     """Factory: construct the configured storage backend from env.

@@ -122,6 +122,8 @@ schedule:
   tagging_cron: "*/30 * * * *"          # AI tagging every 30 min (after news)
   briefing_morning_cron: "30 6 * * *"   # morning briefing, once/day 06:30
   briefing_intraday_cron: "0 13,18 * * *"  # intraday updates ~twice/day
+  figures_cron: "*/45 * * * *"          # key-figures ingestion (M4)
+  impact_cron: "*/45 * * * *"           # AI impact mapping (after figures)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -145,12 +147,17 @@ ai:
   briefing_model: claude-sonnet-4-6
   # High-volume per-item tagging: a cheaper model (cost control).
   tagging_model: claude-haiku-4-5-20251001
+  # High-volume per-statement impact mapping (M4): defaults to the tagging
+  # model unless overridden here / via ANTHROPIC_FIGURES_MODEL.
+  figures_model: claude-haiku-4-5-20251001
   # Cost guardrails.
   tagging_max_items: 40        # max news items tagged per run
   tagging_max_tokens: 400
   briefing_max_tokens: 1200
   briefing_lookback_hours: 24  # how much recent news feeds a briefing
   notable_move_pct: 1.5        # |daily %| above this counts as a notable move
+  figures_max_items: 30        # max key-figure statements impact-mapped per run
+  figures_max_tokens: 400
 
 # --- Themes tracked by the AI layer (configurable) -------------------
 themes:
@@ -186,8 +193,33 @@ news:
   rss:
     enabled: true
     feeds:
-      - { name: "Reuters Business", url: "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best" }
+      - { name: "Reuters Business", url: "https://news.google.com/rss/search?q=when:1d+allinurl:reuters.com&hl=en-US&gl=US&ceid=US:en" }
       - { name: "Federal Reserve", url: "https://www.federalreserve.gov/feeds/press_all.xml" }
       - { name: "ECB Press", url: "https://www.ecb.europa.eu/press/rss/press.xml" }
   newsapi:
     enabled: false         # optional; requires NEWSAPI_KEY in .env
+
+# --- Key figures tracker (M4) ----------------------------------------
+# People/institutions whose statements may move the universe. For each,
+# `keywords` drives the per-figure news query; `press_rss` (optional) adds
+# an official feed. Fully configurable — add/remove figures freely.
+figures:
+  - name: "Donald Trump"
+    role: "US President"
+    keywords: ["Trump", "tariffs", "White House"]
+  - name: "Jerome Powell"
+    role: "Fed Chair"
+    keywords: ["Powell", "Federal Reserve", "FOMC"]
+    press_rss: "https://www.federalreserve.gov/feeds/press_all.xml"
+  - name: "Elon Musk"
+    role: "Tesla / xAI CEO"
+    keywords: ["Elon Musk", "Tesla"]
+  - name: "Jensen Huang"
+    role: "NVIDIA CEO"
+    keywords: ["Jensen Huang", "Nvidia"]
+  - name: "Sundar Pichai"
+    role: "Alphabet CEO"
+    keywords: ["Sundar Pichai", "Google", "Alphabet"]
+  - name: "China policy"
+    role: "PBoC / State Council"
+    keywords: ["China policy", "PBoC", "Politburo", "State Council"]
