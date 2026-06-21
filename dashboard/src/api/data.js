@@ -50,3 +50,26 @@ export async function insertPosition(position) {
   if (!isConfigured) return NOT_CONFIGURED
   return supabase.from('positions').insert(position).select().single()
 }
+
+// Latest AI briefing of a given kind ('morning' | 'intraday').
+export async function fetchLatestBriefing(kind) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('briefings')
+    .select('kind, title, body, model, themes_covered, uncertainty_note, generated_at')
+    .eq('kind', kind)
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+}
+
+// Recent news tagged as relevant to a specific instrument symbol.
+export async function fetchNewsForInstrument(symbol, limit = 8) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('news_items')
+    .select('id, title, url, source, published_at, themes')
+    .contains('instruments', [symbol])
+    .order('published_at', { ascending: false })
+    .limit(limit)
+}

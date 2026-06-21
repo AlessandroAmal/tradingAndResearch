@@ -166,6 +166,32 @@ button:disabled { opacity: 0.6; cursor: default; }
 .sleeve-gauge { color: var(--muted); }
 .pill-gauge { color: var(--neg); border-color: rgba(239,68,68,0.4); }
 
+/* briefing panel */
+.briefing { padding: 8px 0; border-top: 1px solid var(--border); }
+.briefing:first-of-type { border-top: 0; }
+.briefing-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.briefing-label { font-weight: 700; font-size: 13px; }
+.briefing-themes { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.briefing-body {
+  white-space: pre-wrap; word-break: break-word; margin: 6px 0 4px;
+  font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+}
+.briefing-caveat {
+  margin: 4px 0 0; font-size: 12px; color: #fbbf24;
+  background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.3);
+  border-radius: 8px; padding: 6px 8px;
+}
+
+/* per-instrument news */
+.inst-news { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.inst-news h3 { font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.news-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.news-row { padding: 6px 0; border-top: 1px solid var(--border); }
+.news-row:first-child { border-top: 0; }
+.news-row a { color: var(--text); text-decoration: none; font-weight: 600; }
+.news-row a:hover { color: var(--accent); text-decoration: underline; }
+
 /* responsive: stack on phones */
 @media (max-width: 1000px) {
   .grid { grid-template-columns: 1fr; }

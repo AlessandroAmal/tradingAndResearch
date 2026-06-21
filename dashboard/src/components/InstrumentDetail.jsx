@@ -3,6 +3,7 @@ import { fetchPrices } from '../api/data'
 import { atr, dailyChange, distanceFromMaPct } from '../lib/indicators'
 import { fmtNum, fmtPct } from '../lib/format'
 import PriceChart from './PriceChart'
+import InstrumentNews from './InstrumentNews'
 
 const MA_PERIODS = [20, 50, 200]
 
@@ -97,6 +98,8 @@ export default function InstrumentDetail({ instrument }) {
       ) : (
         !loading && !error && <p className="muted">No price history yet.</p>
       )}
+
+      <InstrumentNews symbol={instrument.symbol} />
     </section>
   )
 }

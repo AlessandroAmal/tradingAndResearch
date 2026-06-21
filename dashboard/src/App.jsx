@@ -12,6 +12,7 @@ import InstrumentDetail from './components/InstrumentDetail'
 import Catalysts from './components/Catalysts'
 import PositionForm from './components/PositionForm'
 import PositionsList from './components/PositionsList'
+import BriefingPanel from './components/BriefingPanel'
 import Guide from './pages/Guide'
 
 const REFRESH_MS = 60_000
@@ -145,6 +146,7 @@ export default function App() {
         </div>
 
         <div className="col-mid">
+          <BriefingPanel />
           <InstrumentDetail instrument={selected} />
         </div>
 

@@ -54,3 +54,35 @@ class Storage(Protocol):
 
     def list_positions(self, status: str | None = None) -> list[dict[str, Any]]:
         ...
+
+    # --- news (Phase 2 / M3) --------------------------------------
+    def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
+        """Insert news items, deduped by `url` (ignore existing)."""
+        ...
+
+    def list_untagged_news(self, limit: int) -> list[dict[str, Any]]:
+        """Return newest news items not yet AI-tagged (tagged_at IS NULL)."""
+        ...
+
+    def update_news_tags(
+        self, news_id: str, themes: list[str], instruments: list[str]
+    ) -> None:
+        """Store AI themes/instruments and stamp tagged_at."""
+        ...
+
+    def list_recent_news(self, hours: int, limit: int) -> list[dict[str, Any]]:
+        """Return recently published news (for briefing input)."""
+        ...
+
+    # --- prices / events helpers (briefing inputs) ----------------
+    def get_recent_prices(self, instrument_id: str, limit: int) -> list[dict[str, Any]]:
+        """Return the latest `limit` price rows (ts, close) newest-first."""
+        ...
+
+    def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
+        """Return upcoming calendar events (event_time >= now)."""
+        ...
+
+    # --- briefings (AI output) ------------------------------------
+    def insert_briefing(self, briefing: dict[str, Any]) -> dict[str, Any]:
+        ...

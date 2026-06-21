@@ -1,10 +1,14 @@
 """Worker entry point.
 
 Usage (from worker/):
-    python -m app.main seed        # seed instruments + holdings from config
-    python -m app.main prices      # run price ingestion once
-    python -m app.main calendar    # run calendar ingestion once
-    python -m app.main run         # start the APScheduler loop (blocking)
+    python -m app.main seed              # seed instruments + holdings from config
+    python -m app.main prices            # run price ingestion once
+    python -m app.main calendar          # run calendar ingestion once
+    python -m app.main news              # run news ingestion once
+    python -m app.main tag               # run AI tagging once
+    python -m app.main briefing-morning  # generate a morning briefing once
+    python -m app.main briefing-intraday # generate an intraday briefing once
+    python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
 """
@@ -13,12 +17,17 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .ai import build_ai_client
 from .config import load_config
+from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
+from .ingestion.news_job import run_news_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
+from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger, setup_logging
 from .providers.calendar import build_calendar_provider
+from .providers.news import build_news_providers
 from .providers.prices import build_price_provider
 from .scheduler import build_scheduler
 from .storage import build_storage
@@ -44,6 +53,30 @@ def _cmd_calendar(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_news(cfg, storage) -> int:
+    providers = build_news_providers(cfg)
+    res = run_news_ingestion(cfg, storage, providers)
+    return 0 if res["failed"] == 0 else 1
+
+
+def _cmd_tag(cfg, storage) -> int:
+    ai = build_ai_client()
+    res = run_tagging(cfg, storage, ai)
+    return 0 if res["failed"] == 0 else 1
+
+
+def _cmd_briefing_morning(cfg, storage) -> int:
+    ai = build_ai_client()
+    res = run_briefing(cfg, storage, ai, "morning")
+    return 0 if res["failed"] == 0 else 1
+
+
+def _cmd_briefing_intraday(cfg, storage) -> int:
+    ai = build_ai_client()
+    res = run_briefing(cfg, storage, ai, "intraday")
+    return 0 if res["failed"] == 0 else 1
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -59,6 +92,10 @@ COMMANDS = {
     "seed": _cmd_seed,
     "prices": _cmd_prices,
     "calendar": _cmd_calendar,
+    "news": _cmd_news,
+    "tag": _cmd_tag,
+    "briefing-morning": _cmd_briefing_morning,
+    "briefing-intraday": _cmd_briefing_intraday,
     "run": _cmd_run,
 }
 

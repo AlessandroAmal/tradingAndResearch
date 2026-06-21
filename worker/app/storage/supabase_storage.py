@@ -97,6 +97,87 @@ class SupabaseStorage:
             q = q.eq("status", status)
         return q.execute().data or []
 
+    # --- news -----------------------------------------------------
+    def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        # Dedup by url; ignore_duplicates avoids clobbering existing tags.
+        self._client.table("news_items").upsert(
+            rows, on_conflict="url", ignore_duplicates=True
+        ).execute()
+        log.info("Upserted %d news items", len(rows))
+
+    def list_untagged_news(self, limit: int) -> list[dict[str, Any]]:
+        return (
+            self._client.table("news_items")
+            .select("id, title, source, summary")
+            .is_("tagged_at", "null")
+            .order("published_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def update_news_tags(
+        self, news_id: str, themes: list[str], instruments: list[str]
+    ) -> None:
+        self._client.table("news_items").update(
+            {
+                "themes": themes,
+                "instruments": instruments,
+                "tagged_at": "now()",
+            }
+        ).eq("id", news_id).execute()
+
+    def list_recent_news(self, hours: int, limit: int) -> list[dict[str, Any]]:
+        from datetime import datetime, timedelta, timezone
+
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        return (
+            self._client.table("news_items")
+            .select("title, source, themes, instruments, published_at")
+            .gte("published_at", since)
+            .order("published_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    # --- prices / events helpers ----------------------------------
+    def get_recent_prices(self, instrument_id: str, limit: int) -> list[dict[str, Any]]:
+        return (
+            self._client.table("prices")
+            .select("ts, close")
+            .eq("instrument_id", instrument_id)
+            .order("ts", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        return (
+            self._client.table("events")
+            .select("title, event_time, importance, category")
+            .gte("event_time", now)
+            .order("event_time", desc=False)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    # --- briefings ------------------------------------------------
+    def insert_briefing(self, briefing: dict[str, Any]) -> dict[str, Any]:
+        res = self._client.table("briefings").insert(briefing).execute()
+        return res.data[0] if res.data else {}
+
 
 def build_storage() -> SupabaseStorage:
     """Factory: construct the configured storage backend from env.

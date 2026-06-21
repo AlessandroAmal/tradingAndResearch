@@ -116,8 +116,12 @@ holdings:
 
 # --- Ingestion scheduling (cron; overridable via env) ----------------
 schedule:
-  prices_cron: "*/15 * * * *"      # every 15 minutes
-  calendar_cron: "0 6 * * *"       # daily at 06:00 local
+  prices_cron: "*/15 * * * *"           # every 15 minutes
+  calendar_cron: "0 6 * * *"            # daily at 06:00 local
+  news_cron: "*/30 * * * *"             # news ingestion every 30 min
+  tagging_cron: "*/30 * * * *"          # AI tagging every 30 min (after news)
+  briefing_morning_cron: "30 6 * * *"   # morning briefing, once/day 06:30
+  briefing_intraday_cron: "0 13,18 * * *"  # intraday updates ~twice/day
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -129,3 +133,61 @@ indicators:
   history_days: 250        # lookback pulled for MA/ATR computation
   ma_periods: [20, 50, 200]
   atr_period: 14
+
+# --- AI layer (Phase 2 / M3) -----------------------------------------
+# Claude is called SERVER-SIDE ONLY; the API key lives in the worker .env
+# (ANTHROPIC_API_KEY), never in the browser. Models are configurable.
+# Honesty rule (CLAUDE.md §5): briefings must flag uncertainty and never
+# present predictions as certainties — enforced in the system prompts.
+ai:
+  enabled: true
+  # Briefings: a capable current Claude model.
+  briefing_model: claude-sonnet-4-6
+  # High-volume per-item tagging: a cheaper model (cost control).
+  tagging_model: claude-haiku-4-5-20251001
+  # Cost guardrails.
+  tagging_max_items: 40        # max news items tagged per run
+  tagging_max_tokens: 400
+  briefing_max_tokens: 1200
+  briefing_lookback_hours: 24  # how much recent news feeds a briefing
+  notable_move_pct: 1.5        # |daily %| above this counts as a notable move
+
+# --- Themes tracked by the AI layer (configurable) -------------------
+themes:
+  - Fed
+  - EU
+  - China
+  - Trump/tariffs
+  - NVDA
+  - Google
+  - Musk
+
+# --- News providers (each behind the NewsProvider interface) ---------
+# GDELT is free/no-key; RSS feeds are configurable; NewsAPI is optional.
+news:
+  # Keyword set used to filter/limit ingested items to what's relevant to
+  # the universe + themes (cost control before AI tagging). Configurable.
+  keywords:
+    - Fed
+    - Powell
+    - ECB
+    - inflation
+    - tariffs
+    - China
+    - Nvidia
+    - Tesla
+    - Google
+    - gold
+    - "natural gas"
+  gdelt:
+    enabled: true
+    timespan: "1d"        # GDELT lookback window
+    max_records: 60
+  rss:
+    enabled: true
+    feeds:
+      - { name: "Reuters Business", url: "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best" }
+      - { name: "Federal Reserve", url: "https://www.federalreserve.gov/feeds/press_all.xml" }
+      - { name: "ECB Press", url: "https://www.ecb.europa.eu/press/rss/press.xml" }
+  newsapi:
+    enabled: false         # optional; requires NEWSAPI_KEY in .env

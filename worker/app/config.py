@@ -54,6 +54,9 @@ class AppConfig:
     schedule: dict[str, Any]
     providers: dict[str, Any]
     indicators: dict[str, Any]
+    ai: dict[str, Any] = field(default_factory=dict)
+    news: dict[str, Any] = field(default_factory=dict)
+    themes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # --- convenience accessors -------------------------------------
@@ -72,6 +75,47 @@ class AppConfig:
     @property
     def calendar_cron(self) -> str:
         return os.getenv("CALENDAR_CRON", self.schedule.get("calendar_cron", "0 6 * * *"))
+
+    @property
+    def news_cron(self) -> str:
+        return os.getenv("NEWS_CRON", self.schedule.get("news_cron", "*/30 * * * *"))
+
+    @property
+    def tagging_cron(self) -> str:
+        return os.getenv("TAGGING_CRON", self.schedule.get("tagging_cron", "*/30 * * * *"))
+
+    @property
+    def briefing_morning_cron(self) -> str:
+        return os.getenv(
+            "BRIEFING_MORNING_CRON",
+            self.schedule.get("briefing_morning_cron", "30 6 * * *"),
+        )
+
+    @property
+    def briefing_intraday_cron(self) -> str:
+        return os.getenv(
+            "BRIEFING_INTRADAY_CRON",
+            self.schedule.get("briefing_intraday_cron", "0 13,18 * * *"),
+        )
+
+    # --- AI config (models configurable via config + env) ----------
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.ai.get("enabled", True))
+
+    @property
+    def briefing_model(self) -> str:
+        return os.getenv(
+            "ANTHROPIC_BRIEFING_MODEL",
+            self.ai.get("briefing_model", "claude-sonnet-4-6"),
+        )
+
+    @property
+    def tagging_model(self) -> str:
+        return os.getenv(
+            "ANTHROPIC_TAGGING_MODEL",
+            self.ai.get("tagging_model", "claude-haiku-4-5-20251001"),
+        )
 
 
 def _resolve_config_path() -> Path:
@@ -110,5 +154,8 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         schedule=dict(data.get("schedule", {})),
         providers=dict(data.get("providers", {})),
         indicators=dict(data.get("indicators", {})),
+        ai=dict(data.get("ai", {})),
+        news=dict(data.get("news", {})),
+        themes=list(data.get("themes", [])),
         raw=data,
     )
