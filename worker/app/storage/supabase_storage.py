@@ -97,6 +97,18 @@ class SupabaseStorage:
             q = q.eq("status", status)
         return q.execute().data or []
 
+    # --- risk settings --------------------------------------------
+    def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
+        row = {**settings, "id": 1, "updated_at": "now()"}
+        self._client.table("risk_settings").upsert(row, on_conflict="id").execute()
+        log.info("Risk settings upserted")
+
+    def get_latest_close(self, instrument_id: str) -> float | None:
+        rows = self.get_recent_prices(instrument_id, 1)
+        if rows and rows[0].get("close") is not None:
+            return float(rows[0]["close"])
+        return None
+
     # --- news -----------------------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         if not rows:

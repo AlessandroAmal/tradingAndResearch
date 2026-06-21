@@ -204,6 +204,28 @@ button:disabled { opacity: 0.6; cursor: default; }
 .figure-instr { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
 .figure-why { font-style: italic; }
 
+/* risk: positions table + sizing */
+.risk-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip {
+  font-size: 12px; padding: 2px 9px; border-radius: 999px; font-weight: 600;
+  background: var(--panel-2); border: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+.chip.bad { color: var(--neg); border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.1); }
+
+.risk-table-wrap { overflow-x: auto; }
+.risk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.risk-table th {
+  text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.03em; padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.risk-table td { padding: 6px 6px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.risk-table .flags { display: flex; gap: 4px; flex-wrap: wrap; }
+.flag-badge { font-size: 10px; padding: 1px 6px; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
+.flag-badge.bad { background: rgba(239,68,68,0.15); color: var(--neg); }
+.flag-badge.warn { background: rgba(234,179,8,0.15); color: #eab308; }
+.stat-value.accent { color: var(--accent); }
+
 /* responsive: stack on phones */
 @media (max-width: 1000px) {
   .grid { grid-template-columns: 1fr; }

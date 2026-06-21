@@ -55,6 +55,15 @@ class Storage(Protocol):
     def list_positions(self, status: str | None = None) -> list[dict[str, Any]]:
         ...
 
+    # --- risk settings (M6; seeded from config for the dashboard) --
+    def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
+        """Upsert the singleton risk-settings row (id = 1)."""
+        ...
+
+    def get_latest_close(self, instrument_id: str) -> float | None:
+        """Latest close for an instrument (current price for P&L/breach)."""
+        ...
+
     # --- news (Phase 2 / M3) --------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         """Insert news items, deduped by `url` (ignore existing)."""

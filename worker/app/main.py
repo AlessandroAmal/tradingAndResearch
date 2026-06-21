@@ -10,6 +10,7 @@ Usage (from worker/):
     python -m app.main briefing-intraday # generate an intraday briefing once
     python -m app.main figures           # run key-figures ingestion once (M4)
     python -m app.main impact            # run AI impact mapping once (M4)
+    python -m app.main risk              # print a risk report / breach flags (M6)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -34,6 +35,7 @@ from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
 from .providers.prices import build_price_provider
+from .risk_report import build_risk_report
 from .scheduler import build_scheduler
 from .storage import build_storage
 
@@ -94,6 +96,11 @@ def _cmd_impact(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_risk(cfg, storage) -> int:
+    build_risk_report(cfg, storage)  # logs the report + breach flags
+    return 0
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -115,6 +122,7 @@ COMMANDS = {
     "briefing-intraday": _cmd_briefing_intraday,
     "figures": _cmd_figures,
     "impact": _cmd_impact,
+    "risk": _cmd_risk,
     "run": _cmd_run,
 }
 

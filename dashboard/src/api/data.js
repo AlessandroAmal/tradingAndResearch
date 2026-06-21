@@ -74,6 +74,12 @@ export async function fetchNewsForInstrument(symbol, limit = 8) {
     .limit(limit)
 }
 
+// Singleton risk settings (account size + limits), seeded from config.
+export async function fetchRiskSettings() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('risk_settings').select('*').eq('id', 1).maybeSingle()
+}
+
 // Recent key-figure statements with their AI impact mapping.
 export async function fetchKeyFigures(limit = 15) {
   if (!isConfigured) return NOT_CONFIGURED

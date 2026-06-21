@@ -4,6 +4,7 @@ import {
   fetchPrices,
   fetchUpcomingEvents,
   fetchPositions,
+  fetchRiskSettings,
 } from './api/data'
 import { isConfigured } from './lib/supabase'
 import { dailyChange } from './lib/indicators'
@@ -11,7 +12,8 @@ import Watchlist from './components/Watchlist'
 import InstrumentDetail from './components/InstrumentDetail'
 import Catalysts from './components/Catalysts'
 import PositionForm from './components/PositionForm'
-import PositionsList from './components/PositionsList'
+import PositionsTable from './components/PositionsTable'
+import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
 import KeyFigures from './components/KeyFigures'
 import Guide from './pages/Guide'
@@ -23,6 +25,7 @@ export default function App() {
   const [watch, setWatch] = useState([]) // instruments + last/changePct
   const [events, setEvents] = useState([])
   const [positions, setPositions] = useState([])
+  const [riskSettings, setRiskSettings] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
@@ -68,6 +71,10 @@ export default function App() {
     if (pos.error) nextErrors.positions = pos.error.message
     setPositions(pos.data || [])
 
+    const rs = await fetchRiskSettings()
+    if (rs.error) nextErrors.risk = rs.error.message
+    setRiskSettings(rs.data || null)
+
     setErrors(nextErrors)
     setLoading(false)
   }, [selectedId])
@@ -82,6 +89,19 @@ export default function App() {
   const selected = useMemo(
     () => instruments.find((i) => i.id === selectedId) || null,
     [instruments, selectedId],
+  )
+
+  // Maps for the risk views: latest price + contract multiplier by symbol.
+  const priceBySymbol = useMemo(
+    () => Object.fromEntries(watch.map((w) => [w.symbol, w.last])),
+    [watch],
+  )
+  const multiplierBySymbol = useMemo(
+    () =>
+      Object.fromEntries(
+        instruments.map((i) => [i.symbol, Number(i.contract_multiplier) || 1]),
+      ),
+    [instruments],
   )
 
   return (
@@ -153,6 +173,7 @@ export default function App() {
         </div>
 
         <div className="col-right">
+          <SizingCalculator instruments={instruments} settings={riskSettings} />
           <PositionForm
             instruments={instruments}
             onSaved={loadAll}
@@ -160,11 +181,23 @@ export default function App() {
           <section className="panel">
             <header className="panel-head">
               <h2>Open positions</h2>
+              {loading && <span className="muted small">refreshing…</span>}
             </header>
             {errors.positions && (
               <p className="error">Positions unavailable — {errors.positions}</p>
             )}
-            <PositionsList positions={positions} nowMs={nowMs} />
+            {errors.risk && (
+              <p className="error small">
+                Risk settings unavailable — {errors.risk} (apply migration 0007 + run seed)
+              </p>
+            )}
+            <PositionsTable
+              positions={positions}
+              priceBySymbol={priceBySymbol}
+              multiplierBySymbol={multiplierBySymbol}
+              settings={riskSettings}
+              nowMs={nowMs}
+            />
           </section>
         </div>
       </main>

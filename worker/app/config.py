@@ -33,6 +33,7 @@ class Instrument:
     sleeve: str | None = None          # macro|equity|commodity|energy|gauge
     tradeable_on: str | None = None    # informational (where it can be traded)
     traded: bool = True                # False = display-only gauge (e.g. VIX)
+    contract_multiplier: float = 1.0   # point value (futures/CFD/FX); default 1
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,33 @@ class AppConfig:
     @property
     def symbols(self) -> list[str]:
         return [i.symbol for i in self.universe]
+
+    @property
+    def multiplier_by_symbol(self) -> dict[str, float]:
+        return {i.symbol: float(i.contract_multiplier or 1.0) for i in self.universe}
+
+    # --- risk limits (M6; configurable, env-overridable) -----------
+    @property
+    def max_risk_per_trade_pct(self) -> float:
+        return float(os.getenv("MAX_RISK_PER_TRADE_PCT", self.risk.get("max_risk_per_trade_pct", 1.0)))
+
+    @property
+    def max_portfolio_heat_pct(self) -> float:
+        return float(os.getenv("MAX_PORTFOLIO_HEAT_PCT", self.risk.get("max_portfolio_heat_pct", 6.0)))
+
+    @property
+    def max_concurrent_positions(self) -> int:
+        # Accept legacy `max_open_positions` as a fallback.
+        default = self.risk.get("max_concurrent_positions", self.risk.get("max_open_positions", 8))
+        return int(os.getenv("MAX_CONCURRENT_POSITIONS", default))
+
+    @property
+    def max_position_deadline_days(self) -> int:
+        return int(self.risk.get("max_position_deadline_days", 21))
+
+    @property
+    def deadline_warn_days(self) -> int:
+        return int(self.risk.get("deadline_warn_days", 3))
 
     @property
     def prices_cron(self) -> str:

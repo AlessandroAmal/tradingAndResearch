@@ -1,4 +1,4 @@
-# Trading & Research Command Center — Phases 1–2
+# Trading & Research Command Center — Phases 1–3 (M6)
 
 A personal, **read-only** trading & research cockpit. The Python worker ingests
 **prices** (yfinance), an **economic calendar** (FMP), and **news** (GDELT + RSS)
@@ -9,7 +9,9 @@ instrument detail (chart + indicators + relevant news), the AI briefing, upcomin
 catalysts, and a manual position-entry form.
 
 - **Phase 1** — market data, calendar, manual positions, dashboard skeleton.
-- **Phase 2 (M3)** — news ingestion + Claude briefings + theme tagging (below).
+- **Phase 2 (M3–M4)** — news + Claude briefings + theme tagging + key-figures tracker.
+- **Phase 3 (M6)** — position & risk manager: sizing calculator, live P&L, risk
+  limits, and breach flags (below).
 
 > **Read-only by design.** No order execution anywhere. Positions are *tracked*,
 > not placed. Not financial advice.
@@ -18,7 +20,7 @@ catalysts, and a manual position-entry form.
 
 ```
 config/          # config.yaml — universe, holdings, risk, themes, news, AI (NOT hardcoded)
-db/migrations/   # 0001…0006 — schema (brief §7 tables) + news/AI + key-figure columns
+db/migrations/   # 0001…0007 — schema (brief §7) + news/AI + key-figure + risk-settings
 worker/          # Python: providers (prices/calendar/news), AI layer, jobs, scheduler, storage
 dashboard/       # React + Vite frontend (reads Supabase; no browser storage)
 .env.example     # backend/worker env template
@@ -88,6 +90,7 @@ python -m app.main briefing-morning  # generate a morning briefing
 python -m app.main briefing-intraday # generate an intraday briefing
 python -m app.main figures           # fetch key-figure statements (M4)
 python -m app.main impact            # AI impact-map new statements (M4)
+python -m app.main risk              # print a risk report + breach flags (M6)
 
 # or run the scheduler (blocking; cron cadence from config.yaml):
 python -m app.main run
@@ -113,8 +116,10 @@ cd worker && source .venv/bin/activate
 python -m pytest
 ```
 
-Covers the indicator math, the config loader/overrides, and price-ingestion
-isolation. (Risk/sizing-math tests are scaffolded and skipped until Phase 3.)
+Covers the indicator math, the config loader/overrides, ingestion isolation
+(prices/news/figures), AI tagging/impact JSON parsing, and the **risk/sizing
+math** (sizing, open risk, heat, R-multiple, P&L, breach detection) — the
+piece the brief wants tested.
 
 ## 4. Dashboard (React + Vite)
 
@@ -133,6 +138,11 @@ The dashboard reads from Supabase and shows:
 - **Key figures** feed: tracked figures' statements with AI-mapped affected
   instruments and a one-line "why it matters"
 - **Next catalysts**: upcoming events with countdown
+- **Sizing calculator** (M6): entry/stop/risk% [+ instrument] → suggested size,
+  open risk, R:R — a calculator, it places nothing
+- **Open positions table** (M6): live P&L, risk used vs limit, portfolio heat &
+  position count vs limits, days-to-deadline, and breach badges (stop hit /
+  risk over limit / deadline near)
 - **New position** form (instrument, side, size, entry, stop, target, deadline
   ≤ 3 weeks, broker, thesis) — saved to `positions` for tracking only.
 
@@ -204,6 +214,39 @@ $3/$15 per 1M). Actual cost scales with news volume.
 Even a busy day stays well under ~$0.40/day. Levers: `ai.tagging_max_items`,
 `ai.figures_max_items`, briefing frequency/length, or the Batches API (−50% on
 the Haiku jobs). **Verify current model pricing before relying on these numbers.**
+
+---
+
+## Phase 3 — Trading desks (M6: position & risk manager)
+
+The brief's core module. **Apply migration `0007_risk_settings.sql`** and re-run
+`python -m app.main seed` (it mirrors `config.yaml`'s account size + risk limits
+into the `risk_settings` row the dashboard reads — no browser storage).
+
+- **Risk/sizing math** (`worker/app/risk.py`, pure + fully unit-tested): sizing,
+  open risk (currency + % of account), portfolio heat, R-multiple, unrealised
+  P&L, and breach detection. Multipliers come from `instruments.contract_multiplier`
+  (config `contract_multiplier`, default 1) so futures/CFD/FX size correctly.
+- **Risk limits** in `config.yaml → risk:` — `max_risk_per_trade_pct`,
+  `max_portfolio_heat_pct`, `max_concurrent_positions`, `max_position_deadline_days`,
+  `deadline_warn_days`. Configurable, never hardcoded.
+- **Breach detection = flags only** (no dispatch — Telegram is M8/Phase 4): stop
+  hit, per-trade risk / heat / max-positions over limit, deadline near. Exposed in
+  the dashboard badges and via `python -m app.main risk` (logs a report).
+
+**Read-only:** sizing is a calculator and breaches are flags — nothing here places
+or implies an order.
+
+### Try it
+```bash
+# apply 0007, then (worker venv active):
+python -m app.main seed     # seeds instruments multiplier + risk_settings
+python -m app.main prices   # so positions have a current price for P&L/breach
+# add a position in the dashboard form, then:
+python -m app.main risk     # logs per-position + portfolio risk & breach flags
+```
+The dashboard's sizing calculator works immediately; the positions table fills in
+P&L/risk once prices are ingested and a position is added.
 
 ---
 

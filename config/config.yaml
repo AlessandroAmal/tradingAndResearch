@@ -21,16 +21,19 @@ account:
   size: 100000
   broker_default: "Directa"
 
-# --- Risk limits (used by Phase 3 sizing math; configurable now) -----
+# --- Risk limits (M6 — configurable; the cockpit is read-only, these are
+# limits for the sizing calculator and breach FLAGS, never order rules) ---
 risk:
   # Max % of account risked on a single position (entry -> stop).
   max_risk_per_trade_pct: 1.0
-  # Max % of account exposed across all open positions.
-  max_total_exposure_pct: 30.0
+  # Max portfolio "heat" = sum of open risk across all open positions (% of account).
+  max_portfolio_heat_pct: 6.0
   # Max number of concurrent open positions.
-  max_open_positions: 8
+  max_concurrent_positions: 8
   # Hard cap on how far out a position deadline may be set (business rule).
   max_position_deadline_days: 21
+  # Warn when a position's deadline is within this many days.
+  deadline_warn_days: 3
   # Default ATR multiple used when suggesting stops.
   default_atr_multiple: 2.0
 
@@ -39,6 +42,9 @@ risk:
 # (macro|equity|commodity|energy|gauge). `tradeable_on` is informational.
 # `traded: false` marks display-only gauges (e.g. VIX) — never traded.
 # asset_class: equity | etf | index | fx | commodity | crypto
+# `contract_multiplier` (a.k.a. point value, optional, default 1.0): currency
+#   value of a 1.0 price move per 1 unit/contract — set it for futures/CFD/FX
+#   so the M6 sizing/P&L math is correct (e.g. a future where $1 move = $50).
 universe:
   # Macro core
   - symbol: "^NDX"          # Nasdaq 100 / "US Tech 100"

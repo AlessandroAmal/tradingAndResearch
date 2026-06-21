@@ -25,11 +25,29 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
             "sleeve": i.sleeve,
             "tradeable_on": i.tradeable_on,
             "traded": i.traded,
+            "contract_multiplier": i.contract_multiplier,
             "is_active": True,
         }
         for i in cfg.universe
     ]
     storage.upsert_instruments(instruments)
+
+    # Risk settings: config.yaml is the source of truth; mirror it into the
+    # DB so the dashboard can read account size + limits (no browser storage).
+    try:
+        storage.upsert_risk_settings(
+            {
+                "base_currency": cfg.base_currency,
+                "account_size": cfg.account_size,
+                "max_risk_per_trade_pct": cfg.max_risk_per_trade_pct,
+                "max_portfolio_heat_pct": cfg.max_portfolio_heat_pct,
+                "max_concurrent_positions": cfg.max_concurrent_positions,
+                "max_position_deadline_days": cfg.max_position_deadline_days,
+                "deadline_warn_days": cfg.deadline_warn_days,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 — older DB without 0007; don't block seed
+        log.warning("Could not seed risk_settings (apply migration 0007?): %s", exc)
 
     existing = {h.get("symbol") for h in storage.list_holdings()}
     to_insert: list[dict] = []
