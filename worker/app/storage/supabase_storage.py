@@ -109,6 +109,31 @@ class SupabaseStorage:
             return float(rows[0]["close"])
         return None
 
+    # --- trade journal --------------------------------------------
+    def insert_journal_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        res = self._client.table("journal_entries").insert(entry).execute()
+        return res.data[0] if res.data else {}
+
+    def update_journal_entry(self, entry_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+        res = (
+            self._client.table("journal_entries")
+            .update(fields)
+            .eq("id", entry_id)
+            .execute()
+        )
+        return res.data[0] if res.data else {}
+
+    def list_journal_entries(self, limit: int = 500) -> list[dict[str, Any]]:
+        return (
+            self._client.table("journal_entries")
+            .select("*")
+            .order("entry_date", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
     # --- news -----------------------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         if not rows:

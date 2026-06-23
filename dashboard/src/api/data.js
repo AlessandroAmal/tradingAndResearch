@@ -74,6 +74,26 @@ export async function fetchNewsForInstrument(symbol, limit = 8) {
     .limit(limit)
 }
 
+// --- Trade journal (M7) ---
+export async function fetchJournalEntries(limit = 200) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('journal_entries')
+    .select('id, position_id, symbol, thesis, entry_price, exit_price, size, stop, outcome, pnl, thesis_played_out, notes, reviewed, entry_date')
+    .order('entry_date', { ascending: false })
+    .limit(limit)
+}
+
+export async function insertJournalEntry(entry) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('journal_entries').insert(entry).select().single()
+}
+
+export async function updateJournalEntry(id, fields) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('journal_entries').update(fields).eq('id', id).select().single()
+}
+
 // Singleton risk settings (account size + limits), seeded from config.
 export async function fetchRiskSettings() {
   if (!isConfigured) return NOT_CONFIGURED

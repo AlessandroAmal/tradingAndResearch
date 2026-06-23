@@ -162,6 +162,14 @@ class AppConfig:
             self.ai.get("figures_model", self.tagging_model),
         )
 
+    @property
+    def journal_review_model(self) -> str:
+        # Journal review is quality, not volume -> default to the briefing model.
+        return os.getenv(
+            "ANTHROPIC_JOURNAL_MODEL",
+            self.ai.get("journal_review_model", self.briefing_model),
+        )
+
 
 def _resolve_config_path() -> Path:
     raw = os.getenv("APP_CONFIG_FILE", "config/config.yaml")

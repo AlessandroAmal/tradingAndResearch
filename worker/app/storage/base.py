@@ -64,6 +64,17 @@ class Storage(Protocol):
         """Latest close for an instrument (current price for P&L/breach)."""
         ...
 
+    # --- trade journal (Phase 3 / M7) -----------------------------
+    def insert_journal_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    def update_journal_entry(self, entry_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    def list_journal_entries(self, limit: int = 500) -> list[dict[str, Any]]:
+        """Return journal entries (newest first) for the AI review/aggregation."""
+        ...
+
     # --- news (Phase 2 / M3) --------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         """Insert news items, deduped by `url` (ignore existing)."""

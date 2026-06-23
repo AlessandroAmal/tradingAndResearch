@@ -11,6 +11,7 @@ Usage (from worker/):
     python -m app.main figures           # run key-figures ingestion once (M4)
     python -m app.main impact            # run AI impact mapping once (M4)
     python -m app.main risk              # print a risk report / breach flags (M6)
+    python -m app.main journal-review    # generate an AI trade-journal review (M7)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -35,6 +36,7 @@ from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
 from .providers.prices import build_price_provider
+from .journal_review import run_journal_review
 from .risk_report import build_risk_report
 from .scheduler import build_scheduler
 from .storage import build_storage
@@ -101,6 +103,12 @@ def _cmd_risk(cfg, storage) -> int:
     return 0
 
 
+def _cmd_journal_review(cfg, storage) -> int:
+    ai = build_ai_client()
+    res = run_journal_review(cfg, storage, ai)
+    return 0 if res["failed"] == 0 else 1
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -123,6 +131,7 @@ COMMANDS = {
     "figures": _cmd_figures,
     "impact": _cmd_impact,
     "risk": _cmd_risk,
+    "journal-review": _cmd_journal_review,
     "run": _cmd_run,
 }
 

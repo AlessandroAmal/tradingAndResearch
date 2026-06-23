@@ -17,6 +17,7 @@ import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
 import KeyFigures from './components/KeyFigures'
 import Guide from './pages/Guide'
+import Journal from './pages/Journal'
 
 const REFRESH_MS = 60_000
 
@@ -123,6 +124,13 @@ export default function App() {
               Dashboard
             </button>
             <button
+              className={`nav-btn ${view === 'journal' ? 'active' : ''}`}
+              onClick={() => setView('journal')}
+              aria-current={view === 'journal' ? 'page' : undefined}
+            >
+              Journal
+            </button>
+            <button
               className={`nav-btn ${view === 'guide' ? 'active' : ''}`}
               onClick={() => setView('guide')}
               aria-current={view === 'guide' ? 'page' : undefined}
@@ -148,6 +156,8 @@ export default function App() {
 
       {view === 'guide' ? (
         <Guide />
+      ) : view === 'journal' ? (
+        <Journal instruments={instruments} positions={positions} />
       ) : (
       <main className="grid">
         <div className="col-left">

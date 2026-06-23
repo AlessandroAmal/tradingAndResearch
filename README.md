@@ -10,8 +10,8 @@ catalysts, and a manual position-entry form.
 
 - **Phase 1** — market data, calendar, manual positions, dashboard skeleton.
 - **Phase 2 (M3–M4)** — news + Claude briefings + theme tagging + key-figures tracker.
-- **Phase 3 (M6)** — position & risk manager: sizing calculator, live P&L, risk
-  limits, and breach flags (below).
+- **Phase 3 (M6–M7)** — position & risk manager (sizing, live P&L, risk limits,
+  breach flags) + trade journal with on-demand AI review (below).
 
 > **Read-only by design.** No order execution anywhere. Positions are *tracked*,
 > not placed. Not financial advice.
@@ -20,7 +20,7 @@ catalysts, and a manual position-entry form.
 
 ```
 config/          # config.yaml — universe, holdings, risk, themes, news, AI (NOT hardcoded)
-db/migrations/   # 0001…0007 — schema (brief §7) + news/AI + key-figure + risk-settings
+db/migrations/   # 0001…0008 — schema (brief §7) + news/AI + key-figure + risk-settings + journal
 worker/          # Python: providers (prices/calendar/news), AI layer, jobs, scheduler, storage
 dashboard/       # React + Vite frontend (reads Supabase; no browser storage)
 .env.example     # backend/worker env template
@@ -91,6 +91,7 @@ python -m app.main briefing-intraday # generate an intraday briefing
 python -m app.main figures           # fetch key-figure statements (M4)
 python -m app.main impact            # AI impact-map new statements (M4)
 python -m app.main risk              # print a risk report + breach flags (M6)
+python -m app.main journal-review    # generate an AI trade-journal review (M7)
 
 # or run the scheduler (blocking; cron cadence from config.yaml):
 python -m app.main run
@@ -217,11 +218,11 @@ the Haiku jobs). **Verify current model pricing before relying on these numbers.
 
 ---
 
-## Phase 3 — Trading desks (M6: position & risk manager)
+## Phase 3 — Trading desks (M6 risk manager, M7 journal)
 
-The brief's core module. **Apply migration `0007_risk_settings.sql`** and re-run
-`python -m app.main seed` (it mirrors `config.yaml`'s account size + risk limits
-into the `risk_settings` row the dashboard reads — no browser storage).
+The brief's core module + the trade journal. **Apply migrations `0007`–`0008`**
+and re-run `python -m app.main seed` (it mirrors `config.yaml`'s account size +
+risk limits into the `risk_settings` row the dashboard reads — no browser storage).
 
 - **Risk/sizing math** (`worker/app/risk.py`, pure + fully unit-tested): sizing,
   open risk (currency + % of account), portfolio heat, R-multiple, unrealised
@@ -247,6 +248,30 @@ python -m app.main risk     # logs per-position + portfolio risk & breach flags
 ```
 The dashboard's sizing calculator works immediately; the positions table fills in
 P&L/risk once prices are ingested and a position is added.
+
+### M7 — trade journal
+
+- **CRUD** in the dashboard **Journal** view: add/edit entries with instrument,
+  thesis, entry/exit price, size, stop, outcome (win/loss/breakeven + P&L),
+  `thesis_played_out`, notes, `reviewed`. Optional link to a position pre-fills
+  the fields. Stored in `journal_entries` (additive columns from `0008`; existing
+  `title`/`body` left untouched — no drift).
+- **On-demand AI review** (`python -m app.main journal-review`): computes EXACT
+  stats in code (win rate, realized R-multiple stats, thesis-played-out rate,
+  P&L) and has Claude (quality model, default Sonnet) interpret patterns &
+  recurring mistakes. It is **required to be honest about sample size** — with
+  few trades, patterns are tentative, never certainties. Saved to `briefings`
+  with kind `journal_review`; the dashboard shows the latest.
+- **On-demand by design:** the dashboard reads the latest stored review (it has
+  no API to the worker). A "generate now" button would need a small backend
+  endpoint — **noted as a future extension, not built**.
+
+```bash
+# add entries in the dashboard Journal view, then:
+python -m app.main journal-review   # writes the latest review; the view shows it
+```
+
+**Read-only:** the journal records trades, it does not execute them.
 
 ---
 

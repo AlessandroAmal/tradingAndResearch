@@ -226,6 +226,20 @@ button:disabled { opacity: 0.6; cursor: default; }
 .flag-badge.warn { background: rgba(234,179,8,0.15); color: #eab308; }
 .stat-value.accent { color: var(--accent); }
 
+/* trade journal */
+.journal { display: flex; flex-direction: column; gap: 16px; max-width: 900px; }
+.pos-form label.chk { flex-direction: row; align-items: center; gap: 6px; }
+.pos-form label.chk input { width: auto; }
+button.ghost {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+}
+button.ghost:hover { color: var(--text); }
+button.ghost.small { padding: 2px 8px; font-size: 12px; }
+.journal-list { list-style: none; margin: 0; padding: 0; }
+.journal-row { padding: 8px 0; border-top: 1px solid var(--border); }
+.journal-row:first-child { border-top: 0; }
+.journal-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 /* responsive: stack on phones */
 @media (max-width: 1000px) {
   .grid { grid-template-columns: 1fr; }

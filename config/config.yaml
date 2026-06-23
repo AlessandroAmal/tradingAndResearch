@@ -156,6 +156,10 @@ ai:
   # High-volume per-statement impact mapping (M4): defaults to the tagging
   # model unless overridden here / via ANTHROPIC_FIGURES_MODEL.
   figures_model: claude-haiku-4-5-20251001
+  # Journal review (M7): quality over volume -> a capable model. On demand only.
+  journal_review_model: claude-sonnet-4-6
+  journal_review_max_tokens: 1200
+  journal_review_max_entries: 200   # cap entries fed to the review (cost guard)
   # Cost guardrails.
   tagging_max_items: 40        # max news items tagged per run
   tagging_max_tokens: 400
