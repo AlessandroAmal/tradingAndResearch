@@ -240,6 +240,18 @@ button.ghost.small { padding: 2px 8px; font-size: 12px; }
 .journal-row:first-child { border-top: 0; }
 .journal-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* options desk */
+.desk { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; }
+.desk-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.desk-controls label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.desk-controls select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 7px; font: inherit;
+}
+.desk-tabs { align-self: flex-start; }
+.payoff { width: 100%; max-width: 440px; height: auto; margin-top: 8px; }
+.payoff-lbl { fill: var(--muted); font-size: 10px; }
+
 /* responsive: stack on phones */
 @media (max-width: 1000px) {
   .grid { grid-template-columns: 1fr; }

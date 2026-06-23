@@ -75,6 +75,15 @@ class Storage(Protocol):
         """Return journal entries (newest first) for the AI review/aggregation."""
         ...
 
+    # --- options desk (Phase 3 / M5) ------------------------------
+    def upsert_options_chain(self, rows: list[dict[str, Any]]) -> None:
+        """Upsert option contracts (unique on underlying+expiry+strike+option_type)."""
+        ...
+
+    def replace_hedge_proposals(self, rows: list[dict[str, Any]]) -> None:
+        """Replace the proposed-hedges set (regenerated each run)."""
+        ...
+
     # --- news (Phase 2 / M3) --------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         """Insert news items, deduped by `url` (ignore existing)."""

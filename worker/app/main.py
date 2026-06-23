@@ -12,6 +12,7 @@ Usage (from worker/):
     python -m app.main impact            # run AI impact mapping once (M4)
     python -m app.main risk              # print a risk report / breach flags (M6)
     python -m app.main journal-review    # generate an AI trade-journal review (M7)
+    python -m app.main options           # fetch chains + IV/Greeks + hedge proposals (M5)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -28,6 +29,7 @@ from .ingestion.calendar_job import run_calendar_ingestion
 from .ingestion.figures_job import run_figures_ingestion
 from .ingestion.impact_job import run_impact_mapping
 from .ingestion.news_job import run_news_ingestion
+from .ingestion.options_job import run_options_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
 from .ingestion.tagging_job import run_tagging
@@ -35,6 +37,7 @@ from .logging_setup import get_logger, setup_logging
 from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
+from .providers.options import build_options_provider
 from .providers.prices import build_price_provider
 from .journal_review import run_journal_review
 from .risk_report import build_risk_report
@@ -109,6 +112,12 @@ def _cmd_journal_review(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_options(cfg, storage) -> int:
+    provider = build_options_provider(cfg.options_provider)
+    res = run_options_ingestion(cfg, storage, provider)
+    return 0 if res["failed"] == 0 else 1
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -132,6 +141,7 @@ COMMANDS = {
     "impact": _cmd_impact,
     "risk": _cmd_risk,
     "journal-review": _cmd_journal_review,
+    "options": _cmd_options,
     "run": _cmd_run,
 }
 

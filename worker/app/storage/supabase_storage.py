@@ -134,6 +134,24 @@ class SupabaseStorage:
             or []
         )
 
+    # --- options desk ---------------------------------------------
+    def upsert_options_chain(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        self._client.table("options_chains").upsert(
+            rows, on_conflict="underlying,expiry,strike,option_type"
+        ).execute()
+        log.info("Upserted %d option contracts", len(rows))
+
+    def replace_hedge_proposals(self, rows: list[dict[str, Any]]) -> None:
+        # Regenerated each run: clear then insert.
+        self._client.table("hedge_proposals").delete().neq(
+            "id", "00000000-0000-0000-0000-000000000000"
+        ).execute()
+        if rows:
+            self._client.table("hedge_proposals").insert(rows).execute()
+        log.info("Replaced hedge proposals with %d rows", len(rows))
+
     # --- news -----------------------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         if not rows:

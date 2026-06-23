@@ -16,12 +16,14 @@ from .ingestion.calendar_job import run_calendar_ingestion
 from .ingestion.figures_job import run_figures_ingestion
 from .ingestion.impact_job import run_impact_mapping
 from .ingestion.news_job import run_news_ingestion
+from .ingestion.options_job import run_options_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger
 from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
+from .providers.options import build_options_provider
 from .providers.prices import build_price_provider
 from .storage import Storage
 
@@ -34,6 +36,7 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
     cal_provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"))
     news_providers = build_news_providers(cfg)
     figure_source = build_figure_source(cfg)
+    options_provider = build_options_provider(cfg.options_provider)
 
     def _prices() -> None:
         try:
@@ -58,6 +61,12 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
             run_figures_ingestion(cfg, storage, figure_source)
         except Exception as exc:  # noqa: BLE001
             log.error("Figures job crashed: %s", exc)
+
+    def _options() -> None:
+        try:
+            run_options_ingestion(cfg, storage, options_provider)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Options job crashed: %s", exc)
 
     sched.add_job(
         _prices,
@@ -84,6 +93,13 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         _figures,
         CronTrigger.from_crontab(cfg.figures_cron),
         id="figures_ingestion",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _options,
+        CronTrigger.from_crontab(cfg.options_cron),
+        id="options_ingestion",
         max_instances=1,
         coalesce=True,
     )

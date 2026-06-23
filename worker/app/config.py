@@ -59,6 +59,7 @@ class AppConfig:
     news: dict[str, Any] = field(default_factory=dict)
     themes: list[str] = field(default_factory=list)
     figures: list[dict[str, Any]] = field(default_factory=list)
+    options: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # --- convenience accessors -------------------------------------
@@ -96,6 +97,35 @@ class AppConfig:
     @property
     def deadline_warn_days(self) -> int:
         return int(self.risk.get("deadline_warn_days", 3))
+
+    # --- options desk (M5) -----------------------------------------
+    @property
+    def options_cron(self) -> str:
+        return os.getenv("OPTIONS_CRON", self.schedule.get("options_cron", "0 23 * * *"))
+
+    @property
+    def options_provider(self) -> str:
+        return self.options.get("provider", "yfinance")
+
+    @property
+    def risk_free_rate(self) -> float:
+        return float(os.getenv("RISK_FREE_RATE", self.options.get("risk_free_rate", 0.04)))
+
+    @property
+    def options_expiries_count(self) -> int:
+        return int(self.options.get("expiries_count", 3))
+
+    @property
+    def options_strikes_window_pct(self) -> float:
+        return float(self.options.get("strikes_window_pct", 0.15))
+
+    @property
+    def options_hedge(self) -> dict[str, Any]:
+        return dict(self.options.get("hedge", {}))
+
+    @property
+    def macro_proxies(self) -> dict[str, str]:
+        return {k: v for k, v in (self.options.get("macro_proxies", {}) or {}).items() if v}
 
     @property
     def prices_cron(self) -> str:
@@ -211,5 +241,6 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         news=dict(data.get("news", {})),
         themes=list(data.get("themes", [])),
         figures=list(data.get("figures", [])),
+        options=dict(data.get("options", {})),
         raw=data,
     )

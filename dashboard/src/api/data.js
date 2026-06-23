@@ -100,6 +100,49 @@ export async function fetchRiskSettings() {
   return supabase.from('risk_settings').select('*').eq('id', 1).maybeSingle()
 }
 
+// --- Options desk (M5) ---
+// Distinct underlyings present in options_chains (deduped client-side).
+export async function fetchOptionUnderlyings() {
+  if (!isConfigured) return NOT_CONFIGURED
+  const res = await supabase
+    .from('options_chains')
+    .select('underlying')
+    .order('underlying', { ascending: true })
+  if (res.error) return res
+  const uniq = [...new Set((res.data || []).map((r) => r.underlying))]
+  return { data: uniq, error: null }
+}
+
+export async function fetchOptionExpiries(underlying) {
+  if (!isConfigured) return NOT_CONFIGURED
+  const res = await supabase
+    .from('options_chains')
+    .select('expiry')
+    .eq('underlying', underlying)
+    .order('expiry', { ascending: true })
+  if (res.error) return res
+  const uniq = [...new Set((res.data || []).map((r) => r.expiry))]
+  return { data: uniq, error: null }
+}
+
+export async function fetchOptionChain(underlying, expiry) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('options_chains')
+    .select('strike, option_type, bid, ask, last, mid, implied_vol, delta, gamma, theta, vega, volume, open_interest')
+    .eq('underlying', underlying)
+    .eq('expiry', expiry)
+    .order('strike', { ascending: true })
+}
+
+export async function fetchHedgeProposals() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('hedge_proposals')
+    .select('*')
+    .order('symbol', { ascending: true })
+}
+
 // Recent key-figure statements with their AI impact mapping.
 export async function fetchKeyFigures(limit = 15) {
   if (!isConfigured) return NOT_CONFIGURED

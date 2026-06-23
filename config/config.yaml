@@ -130,6 +130,7 @@ schedule:
   briefing_intraday_cron: "0 13,18 * * *"  # intraday updates ~twice/day
   figures_cron: "*/45 * * * *"          # key-figures ingestion (M4)
   impact_cron: "*/45 * * * *"           # AI impact mapping (after figures)
+  options_cron: "0 23 * * *"            # options desk: once/day after US close (M5)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -233,3 +234,27 @@ figures:
   - name: "China policy"
     role: "PBoC / State Council"
     keywords: ["China policy", "PBoC", "Politburo", "State Council"]
+
+# --- Options / insurance desk (M5) -----------------------------------
+# Analysis only — PROPOSES hedges/structures, never sends orders.
+# yfinance serves options for US equities/ETFs only; macro underlyings use
+# the proxy ETFs below. Underlyings without options (FX/crypto/no-proxy
+# index) degrade gracefully. IV/Greeks are RECALCULATED (Yahoo's IV is
+# unreliable).
+options:
+  provider: yfinance
+  risk_free_rate: 0.04        # annual, decimal — used by BS/IV/Greeks
+  expiries_count: 3           # how many near expiries to fetch per underlying
+  strikes_window_pct: 0.15    # keep strikes within ±15% of spot (table size)
+  hedge:
+    put_otm_pct: 0.05         # protective put strike ~5% OTM
+    call_otm_pct: 0.05        # collar short-call strike ~5% OTM
+    min_days: 30              # first expiry at least this many days out
+  # Macro exposures -> US-listed proxy ETF that HAS options on yfinance.
+  # Symbols not listed here and without their own options are skipped.
+  macro_proxies:
+    "^NDX": QQQ
+    "GC=F": GLD
+    "SI=F": SLV
+    "HG=F": CPER
+    "NG=F": UNG

@@ -1,4 +1,4 @@
-# Trading & Research Command Center — Phases 1–3 (M6)
+# Trading & Research Command Center — Phases 1–3
 
 A personal, **read-only** trading & research cockpit. The Python worker ingests
 **prices** (yfinance), an **economic calendar** (FMP), and **news** (GDELT + RSS)
@@ -10,8 +10,9 @@ catalysts, and a manual position-entry form.
 
 - **Phase 1** — market data, calendar, manual positions, dashboard skeleton.
 - **Phase 2 (M3–M4)** — news + Claude briefings + theme tagging + key-figures tracker.
-- **Phase 3 (M6–M7)** — position & risk manager (sizing, live P&L, risk limits,
-  breach flags) + trade journal with on-demand AI review (below).
+- **Phase 3 (M5–M7)** — options/insurance desk (recomputed IV/Greeks, hedge
+  proposals, payoff/POP) + position & risk manager (sizing, live P&L, risk
+  limits, breach flags) + trade journal with on-demand AI review (below).
 
 > **Read-only by design.** No order execution anywhere. Positions are *tracked*,
 > not placed. Not financial advice.
@@ -20,7 +21,7 @@ catalysts, and a manual position-entry form.
 
 ```
 config/          # config.yaml — universe, holdings, risk, themes, news, AI (NOT hardcoded)
-db/migrations/   # 0001…0008 — schema (brief §7) + news/AI + key-figure + risk-settings + journal
+db/migrations/   # 0001…0009 — schema (brief §7) + news/AI + key-figure + risk + journal + options
 worker/          # Python: providers (prices/calendar/news), AI layer, jobs, scheduler, storage
 dashboard/       # React + Vite frontend (reads Supabase; no browser storage)
 .env.example     # backend/worker env template
@@ -92,6 +93,7 @@ python -m app.main figures           # fetch key-figure statements (M4)
 python -m app.main impact            # AI impact-map new statements (M4)
 python -m app.main risk              # print a risk report + breach flags (M6)
 python -m app.main journal-review    # generate an AI trade-journal review (M7)
+python -m app.main options           # chains + recomputed IV/Greeks + hedge proposals (M5)
 
 # or run the scheduler (blocking; cron cadence from config.yaml):
 python -m app.main run
@@ -218,11 +220,12 @@ the Haiku jobs). **Verify current model pricing before relying on these numbers.
 
 ---
 
-## Phase 3 — Trading desks (M6 risk manager, M7 journal)
+## Phase 3 — Trading desks (M5 options, M6 risk, M7 journal)
 
-The brief's core module + the trade journal. **Apply migrations `0007`–`0008`**
-and re-run `python -m app.main seed` (it mirrors `config.yaml`'s account size +
-risk limits into the `risk_settings` row the dashboard reads — no browser storage).
+The risk manager + trade journal + options/insurance desk. **Apply migrations
+`0007`–`0009`** and re-run `python -m app.main seed` (it mirrors `config.yaml`'s
+account size + risk limits into the `risk_settings` row the dashboard reads — no
+browser storage).
 
 - **Risk/sizing math** (`worker/app/risk.py`, pure + fully unit-tested): sizing,
   open risk (currency + % of account), portfolio heat, R-multiple, unrealised
@@ -272,6 +275,46 @@ python -m app.main journal-review   # writes the latest review; the view shows i
 ```
 
 **Read-only:** the journal records trades, it does not execute them.
+
+### M5 — options / insurance desk
+
+The most quant-heavy module. **Analysis only — PROPOSES hedges/structures, never
+sends orders.** Apply migration `0009`.
+
+- **`OptionsProvider`** (interface + yfinance impl): expiries, chain (strike,
+  bid/ask, last, volume, OI), spot. Swappable for Polygon later.
+- **Recomputed IV/Greeks** — Yahoo's `impliedVolatility` is **ignored**; from the
+  market mid we solve IV (bisection) and derive delta/gamma/theta/vega/rho via
+  Black-Scholes (`worker/app/options.py`, pure + heavily unit-tested).
+- **Structures**: single leg, vertical spread, protective put, collar — each with
+  payoff, breakeven, max loss/gain, R-R. **POP** is the risk-neutral probability
+  *implied by option prices* — labelled as such, **not a forecast**.
+- **Coverage reality:** yfinance has options only for US equities/ETFs. Macro
+  exposures use configurable **proxy ETFs** (`config.yaml → options.macro_proxies`,
+  e.g. `^NDX→QQQ`, `GC=F→GLD`, `NG=F→UNG`); FX/crypto/no-proxy underlyings degrade
+  gracefully (skipped, logged).
+- **Job** (`python -m app.main options`): for universe equities + holdings + proxies,
+  fetches the first N expiries and strikes around ATM, writes `options_chains`, and
+  builds per-holding **hedge proposals** (protective put + collar) with cost, floor,
+  breakeven, %-covered, stored in `hedge_proposals`.
+- **Dashboard "Options" view**: Chain tab (recomputed IV/Greeks table), Insurance
+  tab (proposed hedge + payoff), Directional tab (build single leg / vertical →
+  max loss, R-R, breakeven, POP, payoff).
+
+> **Architecture note (future extension, not built):** the dashboard reads from
+> Supabase and has no API to the worker, so the desk works on the underlyings the
+> worker fetched. On-demand selection of *any* underlying/expiry with live
+> structure recompute would need a small backend endpoint.
+
+```bash
+# apply 0009, then (worker venv active):
+python -m app.main options   # e.g. fetches NVDA/QQQ/GLD… chains + IV/Greeks + hedges
+```
+Then open the dashboard **Options** view: pick NVDA → an expiry → the Chain tab
+shows recomputed IV & Greeks; the Insurance tab shows a proposed put/collar for a
+holding with its payoff.
+
+**Read-only:** the desk analyses and proposes; it never sends an order.
 
 ---
 
