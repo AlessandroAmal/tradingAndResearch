@@ -15,6 +15,8 @@ import {
 } from '../lib/options'
 import { fmtNum, fmtPct } from '../lib/format'
 import PayoffChart from '../components/PayoffChart'
+import InfoTip from '../components/InfoTip'
+import { OPTION_HELP_BY_KEY as OH } from '../data/guide'
 
 // Desk-configured risk-free rate (mirrors config options.risk_free_rate).
 // Used only for the implied (risk-neutral) probability display.
@@ -93,7 +95,7 @@ export default function OptionsDesk() {
         </nav>
       </section>
 
-      {tab === 'chain' && <ChainTab chain={chain} />}
+      {tab === 'chain' && <ChainTab chain={chain} spot={spot} />}
       {tab === 'directional' && (
         <DirectionalTab chain={chain} spot={spot} expiry={expiry} />
       )}
@@ -102,20 +104,29 @@ export default function OptionsDesk() {
   )
 }
 
-function ChainTab({ chain }) {
+function ChainTab({ chain, spot }) {
   if (!chain.length) return <section className="panel"><p className="muted small">No chain for this selection.</p></section>
+  // Strike nearest spot = the ATM row to highlight.
+  const atmStrike = spot != null && chain.length
+    ? chain.reduce((b, c) => (Math.abs(c.strike - spot) < Math.abs(b - spot) ? c.strike : b), chain[0].strike)
+    : null
   return (
     <section className="panel">
       <header className="panel-head"><h2>Chain (recomputed IV &amp; Greeks)</h2></header>
       <div className="risk-table-wrap">
         <table className="risk-table">
           <thead><tr>
-            <th>Strike</th><th>Type</th><th>Bid/Ask</th><th>IV</th>
-            <th>Δ</th><th>Γ</th><th>Θ</th><th>Vega</th><th>Vol/OI</th>
+            <th>Strike</th><th>Type</th><th>Bid/Ask</th>
+            <th><span className="field-label">IV <InfoTip text={OH.iv.text} label={OH.iv.label} /></span></th>
+            <th><span className="field-label">Δ <InfoTip text={OH.delta.text} label={OH.delta.label} /></span></th>
+            <th><span className="field-label">Γ <InfoTip text={OH.gamma.text} label={OH.gamma.label} /></span></th>
+            <th><span className="field-label">Θ <InfoTip text={OH.theta.text} label={OH.theta.label} /></span></th>
+            <th><span className="field-label">Vega <InfoTip text={OH.vega.text} label={OH.vega.label} /></span></th>
+            <th><span className="field-label">Vol/OI <InfoTip text={OH.oi_volume.text} label={OH.oi_volume.label} /></span></th>
           </tr></thead>
           <tbody>
             {chain.map((c, i) => (
-              <tr key={`${c.strike}-${c.option_type}-${i}`}>
+              <tr key={`${c.strike}-${c.option_type}-${i}`} className={c.strike === atmStrike ? 'atm' : ''}>
                 <td>{fmtNum(c.strike, 2)}</td>
                 <td><span className={`badge ${c.option_type === 'call' ? 'long' : 'short'}`}>{c.option_type}</span></td>
                 <td className="muted">{fmtNum(c.bid, 2)}/{fmtNum(c.ask, 2)}</td>
@@ -205,10 +216,10 @@ function DirectionalTab({ chain, spot, expiry }) {
       {metrics ? (
         <>
           <div className="stat-grid">
-            <Stat label="Max loss" value={metrics.maxLoss == null ? '∞' : fmtNum(metrics.maxLoss, 2)} />
-            <Stat label="Max gain" value={metrics.maxGain == null ? '∞' : fmtNum(metrics.maxGain, 2)} />
-            <Stat label="Breakeven" value={fmtNum(metrics.breakeven, 2)} />
-            <Stat label="POP (implied)" value={pop == null ? '—' : fmtPct(pop * 100)} />
+            <Stat label="Max loss" tip={OH.max_loss_gain} value={metrics.maxLoss == null ? '∞' : fmtNum(metrics.maxLoss, 2)} />
+            <Stat label="Max gain" tip={OH.max_loss_gain} value={metrics.maxGain == null ? '∞' : fmtNum(metrics.maxGain, 2)} />
+            <Stat label="Breakeven" tip={OH.breakeven} value={fmtNum(metrics.breakeven, 2)} />
+            <Stat label="POP (implied)" tip={OH.pop} value={pop == null ? '—' : fmtPct(pop * 100)} />
           </div>
           <PayoffChart curve={curve} breakeven={metrics.breakeven} />
           <p className="muted small">
@@ -277,10 +288,13 @@ function InsuranceTab() {
   )
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, tip }) {
   return (
     <div className="stat">
-      <span className="stat-label">{label}</span>
+      <span className="stat-label">
+        {label}
+        {tip && <> <InfoTip text={tip.text} label={tip.label} /></>}
+      </span>
       <span className="stat-value">{value}</span>
     </div>
   )

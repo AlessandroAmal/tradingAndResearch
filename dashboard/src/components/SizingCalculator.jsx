@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { positionSize, openRisk, pctOfAccount, rMultiple } from '../lib/risk'
 import { fmtNum, fmtPct } from '../lib/format'
 import InfoTip from './InfoTip'
+import { RISK_HELP_BY_KEY, FIELD_HELP_BY_KEY } from '../data/guide'
 
 // Position-sizing calculator: entry/stop/risk% [+ instrument] -> size.
 // Pure read-only math — it suggests a size, it does NOT place anything.
@@ -41,7 +42,7 @@ export default function SizingCalculator({ instruments, settings }) {
 
       <form className="pos-form" onSubmit={(ev) => ev.preventDefault()}>
         <label>
-          <span className="field-label">Instrument <InfoTip text="Optional — sets the contract multiplier / point value for futures/CFD/FX." label="Instrument" /></span>
+          <span className="field-label">Instrument <InfoTip text={RISK_HELP_BY_KEY.multiplier.text} label={RISK_HELP_BY_KEY.multiplier.label} /></span>
           <select value={symbol} onChange={(ev) => setSymbol(ev.target.value)}>
             <option value="">— generic (×1) —</option>
             {instruments.map((i) => (
@@ -57,7 +58,7 @@ export default function SizingCalculator({ instruments, settings }) {
             onChange={(ev) => setAccount(ev.target.value)} />
         </label>
         <label>
-          Risk %
+          <span className="field-label">Risk % <InfoTip text={RISK_HELP_BY_KEY.risk_per_trade.text} label={RISK_HELP_BY_KEY.risk_per_trade.label} /></span>
           <input type="number" step="any" min="0" value={riskPct}
             onChange={(ev) => setRiskPct(ev.target.value)} />
         </label>
@@ -67,7 +68,7 @@ export default function SizingCalculator({ instruments, settings }) {
             onChange={(ev) => setEntry(ev.target.value)} />
         </label>
         <label>
-          Stop
+          <span className="field-label">Stop <InfoTip text={FIELD_HELP_BY_KEY.stop.text} label={FIELD_HELP_BY_KEY.stop.label} /></span>
           <input type="number" step="any" value={stop}
             onChange={(ev) => setStop(ev.target.value)} />
         </label>

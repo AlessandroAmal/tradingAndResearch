@@ -16,6 +16,7 @@ import PositionsTable from './components/PositionsTable'
 import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
 import KeyFigures from './components/KeyFigures'
+import StatusStrip from './components/StatusStrip'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
 import OptionsDesk from './pages/OptionsDesk'
@@ -32,7 +33,9 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [nowMs, setNowMs] = useState(Date.now())
-  const [view, setView] = useState('dashboard') // 'dashboard' | 'guide' (state only)
+  // Information architecture: primary groups + a trading sub-tab (state only).
+  const [primary, setPrimary] = useState('mercati')     // 'mercati' | 'trading' | 'guida'
+  const [tradingTab, setTradingTab] = useState('risk')  // 'risk' | 'journal' | 'options'
 
   // tick for live countdowns (state only — no browser storage)
   useEffect(() => {
@@ -106,121 +109,136 @@ export default function App() {
     [instruments],
   )
 
+  const navItem = (key, label) => (
+    <button
+      className={`nav-btn ${primary === key ? 'active' : ''}`}
+      onClick={() => setPrimary(key)}
+      aria-current={primary === key ? 'page' : undefined}
+    >
+      {label}
+    </button>
+  )
+
+  const tradingTabBtn = (key, label) => (
+    <button
+      className={`nav-btn ${tradingTab === key ? 'active' : ''}`}
+      onClick={() => setTradingTab(key)}
+      aria-current={tradingTab === key ? 'page' : undefined}
+    >
+      {label}
+    </button>
+  )
+
   return (
     <div className="app">
       <header className="topbar">
         <div>
-          <h1>Trading & Research Command Center</h1>
+          <h1>Trading &amp; Research Command Center</h1>
           <p className="muted small">
-            Read-only cockpit · information &amp; risk management · not financial advice
+            Cockpit read-only · informazione &amp; gestione del rischio · non è consulenza finanziaria
           </p>
         </div>
         <div className="topbar-actions">
           <nav className="nav" aria-label="Sezioni">
-            <button
-              className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setView('dashboard')}
-              aria-current={view === 'dashboard' ? 'page' : undefined}
-            >
-              Dashboard
-            </button>
-            <button
-              className={`nav-btn ${view === 'options' ? 'active' : ''}`}
-              onClick={() => setView('options')}
-              aria-current={view === 'options' ? 'page' : undefined}
-            >
-              Options
-            </button>
-            <button
-              className={`nav-btn ${view === 'journal' ? 'active' : ''}`}
-              onClick={() => setView('journal')}
-              aria-current={view === 'journal' ? 'page' : undefined}
-            >
-              Journal
-            </button>
-            <button
-              className={`nav-btn ${view === 'guide' ? 'active' : ''}`}
-              onClick={() => setView('guide')}
-              aria-current={view === 'guide' ? 'page' : undefined}
-            >
-              Guida
-            </button>
+            {navItem('mercati', 'Mercati')}
+            {navItem('trading', 'Trading')}
+            {navItem('guida', 'Guida')}
           </nav>
-          {view === 'dashboard' && (
-            <button onClick={loadAll} disabled={loading}>
-              {loading ? 'Refreshing…' : 'Refresh'}
+          {primary !== 'guida' && (
+            <button className="primary" onClick={loadAll} disabled={loading}>
+              {loading ? 'Aggiorno…' : 'Aggiorna'}
             </button>
           )}
         </div>
       </header>
 
-      {view === 'dashboard' && !isConfigured && (
+      {primary !== 'guida' && !isConfigured && (
         <div className="banner error">
-          Supabase is not configured. Copy <code>dashboard/.env.example</code> to{' '}
-          <code>.env</code> and set <code>VITE_SUPABASE_URL</code> /{' '}
+          Supabase non configurato. Copia <code>dashboard/.env.example</code> in{' '}
+          <code>.env</code> e imposta <code>VITE_SUPABASE_URL</code> /{' '}
           <code>VITE_SUPABASE_ANON_KEY</code>.
         </div>
       )}
 
-      {view === 'guide' ? (
-        <Guide />
-      ) : view === 'journal' ? (
-        <Journal instruments={instruments} positions={positions} />
-      ) : view === 'options' ? (
-        <OptionsDesk />
-      ) : (
-      <main className="grid">
-        <div className="col-left">
-          <Watchlist
-            rows={watch}
-            selected={selectedId}
-            onSelect={setSelectedId}
-            loading={loading}
-            error={errors.instruments}
-          />
-          <Catalysts
-            events={events}
-            loading={loading}
-            error={errors.events}
-            nowMs={nowMs}
-          />
-          <KeyFigures />
-        </div>
+      {primary === 'guida' && <Guide />}
 
-        <div className="col-mid">
-          <BriefingPanel />
-          <InstrumentDetail instrument={selected} />
-        </div>
+      {primary !== 'guida' && (
+        <StatusStrip
+          positions={positions}
+          priceBySymbol={priceBySymbol}
+          multiplierBySymbol={multiplierBySymbol}
+          settings={riskSettings}
+          events={events}
+          nowMs={nowMs}
+        />
+      )}
 
-        <div className="col-right">
-          <SizingCalculator instruments={instruments} settings={riskSettings} />
-          <PositionForm
-            instruments={instruments}
-            onSaved={loadAll}
-          />
-          <section className="panel">
-            <header className="panel-head">
-              <h2>Open positions</h2>
-              {loading && <span className="muted small">refreshing…</span>}
-            </header>
-            {errors.positions && (
-              <p className="error">Positions unavailable — {errors.positions}</p>
-            )}
-            {errors.risk && (
-              <p className="error small">
-                Risk settings unavailable — {errors.risk} (apply migration 0007 + run seed)
-              </p>
-            )}
-            <PositionsTable
-              positions={positions}
-              priceBySymbol={priceBySymbol}
-              multiplierBySymbol={multiplierBySymbol}
-              settings={riskSettings}
-              nowMs={nowMs}
+      {primary === 'mercati' && (
+        <main className="grid grid-markets">
+          <div className="col-left">
+            <Watchlist
+              rows={watch}
+              selected={selectedId}
+              onSelect={setSelectedId}
+              loading={loading}
+              error={errors.instruments}
             />
-          </section>
-        </div>
-      </main>
+            <Catalysts events={events} loading={loading} error={errors.events} nowMs={nowMs} />
+            <KeyFigures />
+          </div>
+          <div className="col-main">
+            <BriefingPanel />
+            <InstrumentDetail instrument={selected} />
+          </div>
+        </main>
+      )}
+
+      {primary === 'trading' && (
+        <>
+          <nav className="nav subnav" aria-label="Sezione trading">
+            {tradingTabBtn('risk', 'Posizioni & Rischio')}
+            {tradingTabBtn('journal', 'Journal')}
+            {tradingTabBtn('options', 'Options')}
+          </nav>
+
+          {tradingTab === 'risk' && (
+            <main className="grid grid-trading">
+              <div className="col-left">
+                <SizingCalculator instruments={instruments} settings={riskSettings} />
+                <PositionForm instruments={instruments} onSaved={loadAll} />
+              </div>
+              <div className="col-main">
+                <section className="panel">
+                  <header className="panel-head">
+                    <h2>Posizioni aperte</h2>
+                    {loading && <span className="muted small">aggiorno…</span>}
+                  </header>
+                  {errors.positions && (
+                    <p className="error">Posizioni non disponibili — {errors.positions}</p>
+                  )}
+                  {errors.risk && (
+                    <p className="error small">
+                      Impostazioni di rischio non disponibili — {errors.risk} (applica la 0007 + seed)
+                    </p>
+                  )}
+                  <PositionsTable
+                    positions={positions}
+                    priceBySymbol={priceBySymbol}
+                    multiplierBySymbol={multiplierBySymbol}
+                    settings={riskSettings}
+                    nowMs={nowMs}
+                  />
+                </section>
+              </div>
+            </main>
+          )}
+
+          {tradingTab === 'journal' && (
+            <Journal instruments={instruments} positions={positions} />
+          )}
+
+          {tradingTab === 'options' && <OptionsDesk />}
+        </>
       )}
     </div>
   )

@@ -63,6 +63,18 @@ export async function fetchLatestBriefing(kind) {
     .maybeSingle()
 }
 
+// Latest market briefing of any kind (for the status strip).
+export async function fetchLatestAnyBriefing() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('briefings')
+    .select('kind, title, generated_at')
+    .in('kind', ['morning', 'intraday'])
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+}
+
 // Recent news tagged as relevant to a specific instrument symbol.
 export async function fetchNewsForInstrument(symbol, limit = 8) {
   if (!isConfigured) return NOT_CONFIGURED
