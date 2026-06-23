@@ -1,4 +1,4 @@
-# Trading & Research Command Center — Phases 1–3
+# Trading & Research Command Center — Phases 1–4
 
 A personal, **read-only** trading & research cockpit. The Python worker ingests
 **prices** (yfinance), an **economic calendar** (FMP), and **news** (GDELT + RSS)
@@ -12,7 +12,9 @@ catalysts, and a manual position-entry form.
 - **Phase 2 (M3–M4)** — news + Claude briefings + theme tagging + key-figures tracker.
 - **Phase 3 (M5–M7)** — options/insurance desk (recomputed IV/Greeks, hedge
   proposals, payoff/POP) + position & risk manager (sizing, live P&L, risk
-  limits, breach flags) + trade journal with on-demand AI review (below).
+  limits, breach flags) + trade journal with on-demand AI review.
+- **Phase 4 (M8)** — Telegram alerts (standing flags + user price/IV thresholds,
+  edge-triggered + cooldown).
 
 > **Read-only by design.** No order execution anywhere. Positions are *tracked*,
 > not placed. Not financial advice.
@@ -21,7 +23,7 @@ catalysts, and a manual position-entry form.
 
 ```
 config/          # config.yaml — universe, holdings, risk, themes, news, AI (NOT hardcoded)
-db/migrations/   # 0001…0009 — schema (brief §7) + news/AI + key-figure + risk + journal + options
+db/migrations/   # 0001…0010 — schema (brief §7) + news/AI + key-figure + risk + journal + options + alerts
 worker/          # Python: providers (prices/calendar/news), AI layer, jobs, scheduler, storage
 dashboard/       # React + Vite frontend (reads Supabase; no browser storage)
 .env.example     # backend/worker env template
@@ -67,7 +69,8 @@ cp dashboard/.env.example dashboard/.env  # dashboard public keys
 
 Fill in:
 - `.env` → `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FMP_API_KEY`,
-  and (Phase 2) `ANTHROPIC_API_KEY`
+  (Phase 2) `ANTHROPIC_API_KEY`, and (Phase 4 alerts) `TELEGRAM_BOT_TOKEN` /
+  `TELEGRAM_CHAT_ID`
 - `dashboard/.env` → `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
 The **service-role key and the Anthropic key stay in the worker only**
@@ -94,6 +97,7 @@ python -m app.main impact            # AI impact-map new statements (M4)
 python -m app.main risk              # print a risk report + breach flags (M6)
 python -m app.main journal-review    # generate an AI trade-journal review (M7)
 python -m app.main options           # chains + recomputed IV/Greeks + hedge proposals (M5)
+python -m app.main alerts            # evaluate alert rules + notify via Telegram (M8)
 
 # or run the scheduler (blocking; cron cadence from config.yaml):
 python -m app.main run
@@ -106,6 +110,8 @@ Schedules (overridable via env, e.g. `PRICES_CRON`, `NEWS_CRON`, `FIGURES_CRON`,
 - morning briefing: daily 06:30 — `30 6 * * *`
 - intraday briefings: 13:00 & 18:00 — `0 13,18 * * *`
 - key figures + impact mapping: every 45 min — `*/45 * * * *`
+- options desk: daily 23:00 — `0 23 * * *`
+- alert evaluation: every 10 min — `*/10 * * * *`
 
 Ingestion is resilient: one symbol, feed, or the Claude API being down is
 logged and skipped, the rest proceeds, and the dashboard degrades gracefully.
@@ -315,6 +321,45 @@ shows recomputed IV & Greeks; the Insurance tab shows a proposed put/collar for 
 holding with its payoff.
 
 **Read-only:** the desk analyses and proposes; it never sends an order.
+
+---
+
+## Phase 4 — Alerts (M8)
+
+Telegram notifications for the facts/flags already in the system. **Apply
+migration `0010_alerts.sql`** and re-run `python -m app.main seed` (seeds the
+standing-category toggles). Set `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` in the
+worker `.env` — **without them the job still runs and just skips dispatch (logged)**.
+
+- **Notifier** behind an interface (`worker/app/notify/`): **Telegram** impl
+  (token server-side); email is a prepared, OFF channel. `send()` never raises.
+- **Schema reconciliation (no drift):** the brief §7 sketches `alerts` as rule
+  definitions, but `0001` built it as a dispatch LOG. So `alerts` stays the
+  **sent-alerts log** and a new **`alert_rules`** table holds the definitions +
+  edge/cooldown state.
+- **Standing rules** (toggleable, reuse existing data/flags): risk-limit / stop-hit
+  (M6 flags), deadline approaching, new key-figure statements, news on a universe
+  instrument (`news_items.instruments[]`), elevated ATM IV.
+- **User-defined rules** (in the dashboard): price ≥/≤ X and IV ≥/≤ X on an
+  instrument, saved to `alert_rules`.
+- **Anti-spam:** edge-triggered + cooldown — an alert fires when the condition
+  *becomes* true, then only re-fires after a configurable cooldown (per-item
+  categories dedupe via the `alerts` log `dedup_key`). Every dispatch is logged.
+- **Dashboard "Alert" view** (Trading → Alert): toggle standing categories, add/
+  remove price/IV thresholds, and see the sent-alerts history.
+
+Messages are factual (a breach, countdown, new statement, threshold touched) —
+never a prediction. **Alerts notify; they execute nothing.**
+
+### Try it
+```bash
+# apply 0010, then (worker venv active):
+python -m app.main seed     # seeds the standing alert rules
+# in the dashboard Alert view, add a price threshold easy to hit
+# (e.g. NVDA price ≥ 1) so it triggers on the next prices run, then:
+python -m app.main prices   # so there's a current price
+python -m app.main alerts   # evaluates + sends to Telegram (or logs "skipped" without a token)
+```
 
 ---
 

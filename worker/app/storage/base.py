@@ -84,6 +84,38 @@ class Storage(Protocol):
         """Replace the proposed-hedges set (regenerated each run)."""
         ...
 
+    # --- alerts (Phase 4 / M8) ------------------------------------
+    def list_alert_rules(self, enabled_only: bool = True) -> list[dict[str, Any]]:
+        ...
+
+    def update_alert_rule_state(
+        self, rule_id: str, last_triggered: str | None, last_state: bool
+    ) -> None:
+        """Persist edge state (last_triggered / last_state) after evaluation."""
+        ...
+
+    def upsert_standing_rules(self, rows: list[dict[str, Any]]) -> None:
+        """Seed standing-category rules, preserving existing toggles."""
+        ...
+
+    def insert_alert(self, alert: dict[str, Any]) -> dict[str, Any]:
+        """Append a dispatched alert to the log."""
+        ...
+
+    def recent_alert_exists(self, dedup_key: str, since_iso: str) -> bool:
+        """True if an alert with `dedup_key` was logged at/after `since_iso`."""
+        ...
+
+    def list_recent_figure_statements(self, hours: int, limit: int) -> list[dict[str, Any]]:
+        ...
+
+    def get_atm_iv(self, underlying: str) -> float | None:
+        """ATM implied vol for an underlying (contract with |delta| nearest 0.5)."""
+        ...
+
+    def get_distinct_option_underlyings(self) -> list[str]:
+        ...
+
     # --- news (Phase 2 / M3) --------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         """Insert news items, deduped by `url` (ignore existing)."""

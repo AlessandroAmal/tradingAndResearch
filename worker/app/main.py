@@ -13,6 +13,7 @@ Usage (from worker/):
     python -m app.main risk              # print a risk report / breach flags (M6)
     python -m app.main journal-review    # generate an AI trade-journal review (M7)
     python -m app.main options           # fetch chains + IV/Greeks + hedge proposals (M5)
+    python -m app.main alerts            # evaluate alert rules + notify (M8)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -23,6 +24,7 @@ import argparse
 import sys
 
 from .ai import build_ai_client
+from .alerts import run_alert_evaluation
 from .config import load_config
 from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
@@ -34,6 +36,7 @@ from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
 from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger, setup_logging
+from .notify import build_notifier
 from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
 from .providers.news import build_news_providers
@@ -118,6 +121,12 @@ def _cmd_options(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_alerts(cfg, storage) -> int:
+    notifier = build_notifier(cfg)
+    run_alert_evaluation(cfg, storage, notifier)
+    return 0
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -142,6 +151,7 @@ COMMANDS = {
     "risk": _cmd_risk,
     "journal-review": _cmd_journal_review,
     "options": _cmd_options,
+    "alerts": _cmd_alerts,
     "run": _cmd_run,
 }
 

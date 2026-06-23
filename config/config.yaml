@@ -131,6 +131,7 @@ schedule:
   figures_cron: "*/45 * * * *"          # key-figures ingestion (M4)
   impact_cron: "*/45 * * * *"           # AI impact mapping (after figures)
   options_cron: "0 23 * * *"            # options desk: once/day after US close (M5)
+  alerts_cron: "*/10 * * * *"           # alert evaluation every 10 min (M8)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -258,3 +259,20 @@ options:
     "SI=F": SLV
     "HG=F": CPER
     "NG=F": UNG
+
+# --- Alerts (M8) — NOTIFY only, never execute ------------------------
+# Telegram token/chat live in the worker .env (server-side). Email is a
+# prepared interface, OFF. Anti-spam: edge-triggered + cooldown.
+alerts:
+  channels:
+    telegram: true
+    email: false             # prepared but not wired
+  cooldown_seconds: 3600     # default per-rule re-fire cooldown
+  iv_spike_threshold: 0.6    # standing iv_spike: ATM IV at/above this (snapshot)
+  # Standing categories (seeded as toggleable rules; defaults below).
+  standing:
+    risk: true               # risk-limit / stop-hit flags (from M6)
+    deadline: true           # deadline approaching
+    key_figure: true         # new key-figure statements
+    universe_news: true      # news tagged to a universe instrument
+    iv_spike: false          # elevated ATM IV (snapshot heuristic)

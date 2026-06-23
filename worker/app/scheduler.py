@@ -10,6 +10,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from .ai import build_ai_client
+from .alerts import run_alert_evaluation
 from .config import AppConfig
 from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
@@ -22,6 +23,7 @@ from .ingestion.tagging_job import run_tagging
 from .logging_setup import get_logger
 from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
+from .notify import build_notifier
 from .providers.news import build_news_providers
 from .providers.options import build_options_provider
 from .providers.prices import build_price_provider
@@ -37,6 +39,7 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
     news_providers = build_news_providers(cfg)
     figure_source = build_figure_source(cfg)
     options_provider = build_options_provider(cfg.options_provider)
+    notifier = build_notifier(cfg)
 
     def _prices() -> None:
         try:
@@ -67,6 +70,12 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
             run_options_ingestion(cfg, storage, options_provider)
         except Exception as exc:  # noqa: BLE001
             log.error("Options job crashed: %s", exc)
+
+    def _alerts() -> None:
+        try:
+            run_alert_evaluation(cfg, storage, notifier)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Alerts job crashed: %s", exc)
 
     sched.add_job(
         _prices,
@@ -100,6 +109,13 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         _options,
         CronTrigger.from_crontab(cfg.options_cron),
         id="options_ingestion",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _alerts,
+        CronTrigger.from_crontab(cfg.alerts_cron),
+        id="alerts_evaluation",
         max_instances=1,
         coalesce=True,
     )

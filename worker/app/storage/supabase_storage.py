@@ -152,6 +152,83 @@ class SupabaseStorage:
             self._client.table("hedge_proposals").insert(rows).execute()
         log.info("Replaced hedge proposals with %d rows", len(rows))
 
+    # --- alerts ---------------------------------------------------
+    def list_alert_rules(self, enabled_only: bool = True) -> list[dict[str, Any]]:
+        q = self._client.table("alert_rules").select("*")
+        if enabled_only:
+            q = q.eq("enabled", True)
+        return q.execute().data or []
+
+    def update_alert_rule_state(self, rule_id, last_triggered, last_state) -> None:
+        self._client.table("alert_rules").update(
+            {"last_triggered": last_triggered, "last_state": last_state}
+        ).eq("id", rule_id).execute()
+
+    def upsert_standing_rules(self, rows: list[dict[str, Any]]) -> None:
+        existing = {
+            r.get("standing_type")
+            for r in self._client.table("alert_rules").select("standing_type").eq("kind", "standing").execute().data or []
+        }
+        new = [r for r in rows if r.get("standing_type") not in existing]
+        if new:
+            self._client.table("alert_rules").insert(new).execute()
+        log.info("Seeded %d standing alert rules (%d already present)", len(new), len(rows) - len(new))
+
+    def insert_alert(self, alert: dict[str, Any]) -> dict[str, Any]:
+        res = self._client.table("alerts").insert(alert).execute()
+        return res.data[0] if res.data else {}
+
+    def recent_alert_exists(self, dedup_key: str, since_iso: str) -> bool:
+        res = (
+            self._client.table("alerts")
+            .select("id")
+            .eq("dedup_key", dedup_key)
+            .gte("triggered_at", since_iso)
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+
+    def list_recent_figure_statements(self, hours: int, limit: int) -> list[dict[str, Any]]:
+        from datetime import datetime, timedelta, timezone
+
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        return (
+            self._client.table("figure_statements")
+            .select("id, figure, statement, stated_at")
+            .gte("stated_at", since)
+            .order("stated_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def get_atm_iv(self, underlying: str) -> float | None:
+        rows = (
+            self._client.table("options_chains")
+            .select("delta, implied_vol")
+            .eq("underlying", underlying)
+            .eq("option_type", "call")
+            .not_.is_("implied_vol", "null")
+            .not_.is_("delta", "null")
+            .execute()
+            .data
+            or []
+        )
+        best = None
+        for r in rows:
+            if r.get("delta") is None or r.get("implied_vol") is None:
+                continue
+            d = abs(float(r["delta"]) - 0.5)
+            if best is None or d < best[0]:
+                best = (d, float(r["implied_vol"]))
+        return best[1] if best else None
+
+    def get_distinct_option_underlyings(self) -> list[str]:
+        rows = self._client.table("options_chains").select("underlying").execute().data or []
+        return sorted({r["underlying"] for r in rows if r.get("underlying")})
+
     # --- news -----------------------------------------------------
     def upsert_news_items(self, rows: list[dict[str, Any]]) -> None:
         if not rows:

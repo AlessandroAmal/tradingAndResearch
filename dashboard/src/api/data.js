@@ -106,6 +106,40 @@ export async function updateJournalEntry(id, fields) {
   return supabase.from('journal_entries').update(fields).eq('id', id).select().single()
 }
 
+// --- Alerts (M8) ---
+export async function fetchAlertRules() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('alert_rules')
+    .select('id, kind, standing_type, symbol, op, threshold, label, enabled, cooldown_seconds, last_triggered')
+    .order('kind', { ascending: true })
+    .order('created_at', { ascending: true })
+}
+
+export async function insertAlertRule(rule) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('alert_rules').insert(rule).select().single()
+}
+
+export async function updateAlertRule(id, fields) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('alert_rules').update(fields).eq('id', id).select().single()
+}
+
+export async function deleteAlertRule(id) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('alert_rules').delete().eq('id', id)
+}
+
+export async function fetchAlertsLog(limit = 40) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('alerts')
+    .select('id, kind, symbol, message, severity, delivered, triggered_at')
+    .order('triggered_at', { ascending: false })
+    .limit(limit)
+}
+
 // Singleton risk settings (account size + limits), seeded from config.
 export async function fetchRiskSettings() {
   if (!isConfigured) return NOT_CONFIGURED

@@ -325,7 +325,9 @@ input[type="number"] { font-family: var(--mono); }
 .journal, .guide { display: flex; flex-direction: column; gap: 16px; max-width: 940px; }
 .journal-row { padding: 9px 0; border-top: 1px solid var(--line); }
 .journal-row:first-child { border-top: 0; }
-.journal-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.journal-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.chk-inline { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.chk-inline input { width: auto; }
 
 .guide-dl { margin: 0; }
 .guide-row { display: grid; grid-template-columns: 210px 1fr; gap: 14px; padding: 9px 0; border-top: 1px solid var(--line); }

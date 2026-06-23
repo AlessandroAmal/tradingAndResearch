@@ -60,6 +60,7 @@ class AppConfig:
     themes: list[str] = field(default_factory=list)
     figures: list[dict[str, Any]] = field(default_factory=list)
     options: dict[str, Any] = field(default_factory=dict)
+    alerts: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # --- convenience accessors -------------------------------------
@@ -102,6 +103,18 @@ class AppConfig:
     @property
     def options_cron(self) -> str:
         return os.getenv("OPTIONS_CRON", self.schedule.get("options_cron", "0 23 * * *"))
+
+    @property
+    def alerts_cron(self) -> str:
+        return os.getenv("ALERTS_CRON", self.schedule.get("alerts_cron", "*/10 * * * *"))
+
+    @property
+    def alert_cooldown_seconds(self) -> int:
+        return int((self.alerts or {}).get("cooldown_seconds", 3600))
+
+    @property
+    def standing_defaults(self) -> dict[str, bool]:
+        return dict((self.alerts or {}).get("standing", {}))
 
     @property
     def options_provider(self) -> str:
@@ -242,5 +255,6 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         themes=list(data.get("themes", [])),
         figures=list(data.get("figures", [])),
         options=dict(data.get("options", {})),
+        alerts=dict(data.get("alerts", {})),
         raw=data,
     )

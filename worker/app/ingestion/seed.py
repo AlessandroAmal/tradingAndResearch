@@ -49,6 +49,31 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
     except Exception as exc:  # noqa: BLE001 — older DB without 0007; don't block seed
         log.warning("Could not seed risk_settings (apply migration 0007?): %s", exc)
 
+    # Standing alert rules (M8): one toggleable row per category. Existing
+    # rows (and the user's enabled toggle) are preserved.
+    _STANDING_LABELS = {
+        "risk": "Violazioni di rischio / stop bucato",
+        "deadline": "Deadline in avvicinamento",
+        "key_figure": "Nuove dichiarazioni key-figure",
+        "universe_news": "News su strumenti dell'universo",
+        "iv_spike": "IV ATM elevata",
+    }
+    try:
+        cooldown = cfg.alert_cooldown_seconds
+        rows = [
+            {
+                "kind": "standing",
+                "standing_type": st,
+                "enabled": bool(enabled),
+                "cooldown_seconds": cooldown,
+                "label": _STANDING_LABELS.get(st, st),
+            }
+            for st, enabled in cfg.standing_defaults.items()
+        ]
+        storage.upsert_standing_rules(rows)
+    except Exception as exc:  # noqa: BLE001 — older DB without 0010; don't block seed
+        log.warning("Could not seed standing alert rules (apply migration 0010?): %s", exc)
+
     existing = {h.get("symbol") for h in storage.list_holdings()}
     to_insert: list[dict] = []
     updated = 0

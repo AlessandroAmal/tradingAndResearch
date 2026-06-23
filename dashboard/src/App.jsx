@@ -20,6 +20,7 @@ import StatusStrip from './components/StatusStrip'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
 import OptionsDesk from './pages/OptionsDesk'
+import Alerts from './pages/Alerts'
 
 const REFRESH_MS = 60_000
 
@@ -199,6 +200,7 @@ export default function App() {
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
             {tradingTabBtn('journal', 'Journal')}
             {tradingTabBtn('options', 'Options')}
+            {tradingTabBtn('alerts', 'Alert')}
           </nav>
 
           {tradingTab === 'risk' && (
@@ -238,6 +240,8 @@ export default function App() {
           )}
 
           {tradingTab === 'options' && <OptionsDesk />}
+
+          {tradingTab === 'alerts' && <Alerts instruments={instruments} />}
         </>
       )}
     </div>
