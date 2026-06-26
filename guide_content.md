@@ -218,7 +218,60 @@ prezzi, non inventata; ma va letta come la quota di una scommessa, non come un o
 
 ---
 
-## 8. Come leggere tutto con onestà
+## 9. Decision board (per strumento — oro)
+
+Una vista che raccoglie in un colpo d'occhio le condizioni che pesi **prima** di un trade. **NON è
+un segnale e NON è una previsione**: è il quadro che valuti tu. Il colore indica solo lo *stato*
+(favorevole / contrario / attenzione), mai un'azione.
+
+### Sintesi (lettura di confluenza)
+In cima alla vista, una **lettura direzionale** (lean) con la sua forza su scala −100..+100 (es.
+"moderatamente ribassista") e, espandibile, il **dettaglio per fattore**: ogni fattore col suo stato
+(rialzista / ribassista / neutro), tipo (direzionale o contesto) e peso configurabile.
+- La lettura è l'**allineamento delle condizioni ATTUALI**, **non** una probabilità e **non** una
+  previsione del prossimo movimento. Per questo **non** vedrai mai un "X% sale/scende" calcolato da noi.
+- I fattori di **contesto** (volatilità/ATR, streak, rischio evento) **non** spingono il lean; il
+  rischio-evento è un *flag di cautela*, non una direzione. Se un dato manca, il fattore è **escluso**
+  (non indovinato) e te lo diciamo.
+- **Confronto condizioni ↔ mercato:** la lettura è affiancata alla **probabilità implicita** nelle
+  opzioni (l'unico numero di probabilità, gli odds del mercato). Se le condizioni puntano da una parte
+  ma il mercato è ~neutro, spesso il movimento è **già prezzato** — è l'output di sintesi più utile.
+- Caveat fissi: fotografia delle condizioni attuali, non una previsione; i fattori sono deboli e
+  dipendono dal regime; la probabilità del futuro è solo quella implicita.
+
+### Confluenza
+Tutte le condizioni con il loro stato: tasso reale ↑/↓, dollaro ↑/↓, streak, posizione vs MA, RSI,
+ATR, prossimo evento. "Favorevole/contrario" riflette il **contesto storico** per quello strumento
+(es. tasso reale in salita = vento contrario per l'oro), non una raccomandazione.
+
+### Misure tecniche
+- **Streak** — giorni consecutivi nella stessa direzione. Uno streak lungo è spesso segno di un
+  **trend forte**, non di un rimbalzo garantito.
+- **MA200** — media a 200 giorni: tendenza di fondo (sopra/sotto). Contesto, non segnale.
+- **RSI** — sbilanciamento del movimento recente (0–100). Soglie **tarate sullo strumento** (per
+  l'oro più larghe di 70/30). "Ipercomprato/ipervenduto" = attenzione, non inversione.
+- **ATR** — ampiezza media di oscillazione (volatilità realizzata): per stop realistici.
+
+### Base rate storico (onestà sul campione)
+Dato lo streak attuale (es. "5 giorni giù"), conta **quante volte (n)** è già successo nel periodo e
+cosa è accaduto dopo: **% di volte in salita** e rendimento medio al giorno dopo / a N giorni.
+- `n` è **sempre** mostrato.
+- Se `n` è sotto la soglia: *"campione insufficiente — nessuna conclusione"*.
+- Se quello streak **non si è mai visto**: *"mai accaduto: nessuna base statistica"*, **non** una
+  probabilità. La rarità **non** implica l'inversione (fallacia dello scommettitore).
+
+### Probabilità implicite dalle opzioni
+Dai prezzi delle opzioni (proxy GLD), il **movimento atteso ±%** e la **probabilità implicita**
+(risk-neutral) che il prezzo finisca sopra/sotto il livello corrente a ~1 giorno / ~3 giorni / ~1
+mese. Sono gli **odds del mercato** impliciti nei prezzi, **non una previsione**.
+
+### Sintesi AI (opzionale)
+Quando attiva, mette in parole il setup e ne segnala tensioni e incertezza. Per regola **non fa mai
+una chiamata direzionale** (sale/scende, compra/vendi): descrive le condizioni, non predice.
+
+---
+
+## 10. Come leggere tutto con onestà
 
 Il filo conduttore del cockpit: **niente segnali finti.**
 - Le **probabilità** (POP) sono quelle implicite nei prezzi — gli odds del mercato, non profezie.
@@ -235,6 +288,8 @@ Il filo conduttore del cockpit: **niente segnali finti.**
 
 - **ATR** — ampiezza media di oscillazione (volatilità realizzata).
 - **ATM / ITM / OTM** — strike at/in/out of the money.
+- **Base rate** — frequenza storica di cosa è successo dopo una certa situazione (es. uno streak),
+  sempre con la sua numerosità `n`. Non una previsione.
 - **Breakeven** — prezzo del sottostante a cui una struttura non guadagna né perde.
 - **Call / Put** — diritto di comprare / vendere a strike entro scadenza.
 - **Collar** — put protettiva finanziata da una call venduta (protezione con tetto ai guadagni).
@@ -251,7 +306,13 @@ Il filo conduttore del cockpit: **niente segnali finti.**
 - **Payoff** — profitto/perdita a scadenza al variare del sottostante.
 - **POP (probabilità di profitto)** — probabilità implicita nei prezzi oltre il breakeven (odds
   del mercato, non previsione).
+- **Probabilità implicita** — probabilità ricavata dai prezzi delle opzioni (risk-neutral): gli
+  odds del mercato, non una profezia.
 - **Portfolio heat** — somma dei rischi aperti.
+- **RSI** — Relative Strength Index (0–100): sbilanciamento del movimento recente. Soglie tarate
+  per strumento.
+- **Tasso reale / Breakeven inflazione (FRED)** — driver macro dell'oro: rendimento decennale al
+  netto dell'inflazione attesa (DFII10) e inflazione attesa a 10 anni (T10YIE).
 - **Protective put** — put a copertura di un long posseduto (pavimento alle perdite).
 - **R-multiple (R:R)** — rapporto rischio/rendimento.
 - **Rischio per trade** — perdita se lo stop è colpito, in % del conto.

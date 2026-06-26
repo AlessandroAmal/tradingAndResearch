@@ -61,6 +61,23 @@ export const OPTION_HELP = [
 ]
 export const OPTION_HELP_BY_KEY = byKey(OPTION_HELP)
 
+// --- Decision board terms (M9 tooltips + §9) --------------------------
+export const DECISION_HELP = [
+  { key: 'ma200', label: 'MA200', text: 'Media mobile a 200 giorni: il riferimento di tendenza di lungo periodo. Sopra = contesto rialzista di fondo, sotto = ribassista. È contesto, non un segnale.' },
+  { key: 'rsi', label: 'RSI', text: 'Relative Strength Index (0–100): misura quanto il movimento recente sia stato sbilanciato su o giù. Le soglie qui sono tarate sullo strumento (per l’oro più larghe di 70/30, perché un trend forte tiene l’RSI a lungo agli estremi). “Ipercomprato/ipervenduto” è uno stato di attenzione, NON un segnale di inversione.' },
+  { key: 'atr', label: 'ATR', text: 'Average True Range: l’ampiezza media di oscillazione giornaliera (volatilità realizzata). Quanto “respira” lo strumento — utile per dimensionare stop realistici.' },
+  { key: 'base_rate', label: 'Base rate (frequenza storica)', text: 'Dato lo streak attuale (es. 5 giorni giù), conta quante volte (n) è già successo nel periodo e cosa è accaduto nei giorni dopo: % di volte in salita e rendimento medio. È la frequenza storica con la sua numerosità, NON una previsione. Con n piccolo non si conclude nulla; se non è mai successo, non viene mostrata alcuna probabilità.' },
+  { key: 'pct_up', label: '% in salita', text: 'Frazione delle volte, in passato, in cui dopo questo stesso streak il prezzo era più alto all’orizzonte indicato. Frequenza osservata, da leggere insieme a n — non una probabilità di rimbalzo.' },
+  { key: 'implied_prob', label: 'Probabilità implicita', text: 'Probabilità ricavata dai prezzi delle opzioni (risk-neutral, Black-Scholes) che il prezzo finisca sopra/sotto un livello a un dato orizzonte. Sono gli odds del mercato impliciti nei prezzi, NON una previsione.' },
+  { key: 'expected_move', label: 'Movimento atteso (±)', text: 'Ampiezza di oscillazione (±1 deviazione standard) che il mercato sconta nelle opzioni fino a quella scadenza, dalla volatilità implicita ATM. In ampiezza, non in direzione.' },
+  { key: 'streak', label: 'Streak', text: 'Numero di giorni consecutivi nella stessa direzione. Uno streak lungo è spesso segno di un trend forte, non di un rimbalzo garantito.' },
+  { key: 'confluence_read', label: 'Lettura di confluenza', text: 'Quanto le condizioni ATTUALI (driver macro, trend, ecc.) puntano nella stessa direzione per questo strumento. È una fotografia dell’allineamento di oggi, NON una probabilità e NON una previsione del prossimo movimento. Ogni fattore mostra il suo contributo: trasparenza totale.' },
+  { key: 'lean', label: 'Lettura direzionale (lean)', text: 'Sintesi pesata dei fattori su scala -100..+100 con un’etichetta (es. “moderatamente ribassista”). NON è una percentuale di salita/discesa: è solo il grado di allineamento delle condizioni attuali. I fattori sono deboli e dipendono dal regime.' },
+  { key: 'factor_breakdown', label: 'Dettaglio per fattore', text: 'Ogni fattore con il suo stato (rialzista/ribassista/neutro), tipo (direzionale o contesto) e peso. I fattori di contesto (volatilità, streak, rischio evento) non spingono il lean. Se un dato manca, il fattore è escluso, non indovinato.' },
+  { key: 'divergence', label: 'Condizioni ↔ mercato', text: 'Confronta la lettura delle condizioni con la probabilità IMPLICITA nelle opzioni (gli odds del mercato). Se le condizioni sono direzionali ma il mercato è ~neutro, il movimento potrebbe essere già prezzato. L’unica probabilità del futuro resta quella implicita, non la lettura.' },
+]
+export const DECISION_HELP_BY_KEY = byKey(DECISION_HELP)
+
 // helpers to build definition lists from the keyed dicts (same texts as tooltips)
 const dl = (dict, keys) => keys.map((k) => ({ term: dict[k].label, def: dict[k].text }))
 
@@ -102,6 +119,10 @@ export const GLOSSARY = [
   { term: 'Spread verticale', body: 'Due opzioni stesso tipo, strike diversi: rischio e guadagno definiti.' },
   { term: 'Stop (stop-loss)', body: 'Prezzo di uscita in perdita; definisce il rischio.' },
   { term: 'Strike', body: 'Prezzo prefissato dell’opzione.' },
+  { term: 'Base rate', body: 'Frequenza storica di ciò che è successo dopo una certa situazione (es. uno streak), sempre con la sua numerosità n. Non una previsione.' },
+  { term: 'RSI', body: 'Relative Strength Index (0–100): sbilanciamento del movimento recente. Soglie tarate per strumento.' },
+  { term: 'Probabilità implicita', body: 'Probabilità ricavata dai prezzi delle opzioni (risk-neutral): gli odds del mercato, non una profezia.' },
+  { term: 'Tasso reale / Breakeven inflazione', body: 'Driver macro dell’oro da FRED: rendimento decennale al netto dell’inflazione attesa (DFII10) e inflazione attesa a 10 anni (T10YIE).' },
   { term: 'VIX', body: 'Indice della paura (volatilità attesa S&P 500); si guarda, non si tratta.' },
 ]
 
@@ -212,7 +233,26 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'onesta', label: '8 · Leggere con onestà', blocks: [
+    id: 'decision', label: '9 · Decision board', blocks: [
+      { type: 'p', text: 'Una vista per strumento (per ora l’oro) che raccoglie in un colpo d’occhio le condizioni che pesi PRIMA di un trade: driver macro, tecnica, una base rate storica onesta e le probabilità implicite nei prezzi delle opzioni. NON è un segnale e NON è una previsione: è il quadro che valuti tu. Il colore indica solo lo stato (favorevole/contrario/attenzione), mai un’azione.' },
+      { type: 'h', text: 'Sintesi (lettura di confluenza)' },
+      { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['confluence_read', 'lean', 'factor_breakdown', 'divergence']) },
+      { type: 'note', text: 'La lettura è l’allineamento delle condizioni ATTUALI, NON una probabilità: per questo non vedrai mai un “X% sale/scende” calcolato da noi. L’unica probabilità del futuro mostrata è quella IMPLICITA nei prezzi delle opzioni (gli odds del mercato). Il confronto condizioni↔mercato è l’output più utile: se le condizioni puntano da una parte ma il mercato è ~neutro, spesso il movimento è già prezzato.' },
+      { type: 'h', text: 'Confluenza' },
+      { type: 'p', text: 'Tutte le condizioni con il loro stato: tasso reale ↑/↓, dollaro ↑/↓, streak, posizione vs MA, RSI, ATR, prossimo evento. Favorevole/contrario riflette il contesto storico per quello strumento (es. tasso reale in salita = vento contrario per l’oro), non una raccomandazione.' },
+      { type: 'h', text: 'Misure tecniche' },
+      { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['streak', 'ma200', 'rsi', 'atr']) },
+      { type: 'h', text: 'Base rate storico (con onestà sul campione)' },
+      { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['base_rate', 'pct_up']) },
+      { type: 'note', text: 'Uno streak lungo è spesso il segno di un trend forte, non di un rimbalzo garantito. Mostriamo sempre n: se è troppo piccolo, “campione insufficiente — nessuna conclusione”; se quello streak non si è mai visto, “mai accaduto: nessuna base statistica”, NON una probabilità. La rarità non implica l’inversione.' },
+      { type: 'h', text: 'Probabilità implicite dalle opzioni' },
+      { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['implied_prob', 'expected_move']) },
+      { type: 'h', text: 'Sintesi AI (opzionale)' },
+      { type: 'p', text: 'Quando attiva, mette in parole il setup e segnala le tensioni e l’incertezza. Per regola NON fa mai una chiamata direzionale (sale/scende, compra/vendi): descrive le condizioni, non predice.' },
+    ],
+  },
+  {
+    id: 'onesta', label: '10 · Leggere con onestà', blocks: [
       { type: 'p', text: 'Il filo conduttore del cockpit: niente segnali finti.' },
       { type: 'ul', items: [
         'Le probabilità (POP) sono quelle implicite nei prezzi — gli odds del mercato, non profezie.',

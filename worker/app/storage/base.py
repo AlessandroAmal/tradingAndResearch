@@ -140,6 +140,28 @@ class Storage(Protocol):
         """Return the latest `limit` price rows (ts, close) newest-first."""
         ...
 
+    def get_price_history(self, instrument_id: str, limit: int) -> list[dict[str, Any]]:
+        """Return the latest `limit` OHLC rows (ts, open, high, low, close)
+        newest-first — for the decision board's technicals/base rates (M9)."""
+        ...
+
+    # --- decision board (Phase 4 / M9) ----------------------------
+    def upsert_macro_series(self, rows: list[dict[str, Any]]) -> None:
+        """Upsert FRED macro observations (unique on series_id + obs_date)."""
+        ...
+
+    def get_macro_series(self, series_id: str, limit: int) -> list[dict[str, Any]]:
+        """Return the latest `limit` observations (value, obs_date) newest-first."""
+        ...
+
+    def list_statements_by_figure(self, figure: str, limit: int) -> list[dict[str, Any]]:
+        """Recent key-figure statements for one figure (e.g. Powell) for the board."""
+        ...
+
+    def upsert_decision_board(self, symbol: str, board: dict[str, Any]) -> None:
+        """Upsert the single latest decision-board snapshot for an instrument."""
+        ...
+
     def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
         """Return upcoming calendar events (event_time >= now)."""
         ...

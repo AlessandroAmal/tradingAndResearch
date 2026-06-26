@@ -132,6 +132,8 @@ schedule:
   impact_cron: "*/45 * * * *"           # AI impact mapping (after figures)
   options_cron: "0 23 * * *"            # options desk: once/day after US close (M5)
   alerts_cron: "*/10 * * * *"           # alert evaluation every 10 min (M8)
+  macro_cron: "30 22 * * *"             # FRED macro series: once/day (M9)
+  decision_cron: "0 0 * * *"            # decision board assembly: after macro/options (M9)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -276,3 +278,50 @@ alerts:
     key_figure: true         # new key-figure statements
     universe_news: true      # news tagged to a universe instrument
     iv_spike: false          # elevated ATM IV (snapshot heuristic)
+
+# --- Decision board (M9) — per-instrument confluence cockpit ---------
+# NOT a signal and NEVER a prediction (CLAUDE.md §1, §5): it assembles the
+# context the user weighs (macro drivers, technicals, an HONEST historical base
+# rate with sample size n, and option-IMPLIED market odds). Implemented first
+# for gold only; generalises to any instrument by adding an entry below.
+#
+# `macro_drivers` is the ONE new feed (FRED, free, key in worker .env as
+# FRED_API_KEY). `supportive_when` only colours a driver as tail/head-wind
+# (descriptive context, not a buy/sell call); `interpretation` is the tooltip.
+# Series ids verified against FRED at build time (all daily):
+#   DFII10   = 10y Treasury real yield (inflation-indexed, constant maturity)
+#   T10YIE   = 10y breakeven inflation rate
+#   DTWEXBGS = Nominal Broad U.S. Dollar Index
+decision_board:
+  enabled: true
+  macro:
+    provider: fred
+    history_days: 365          # FRED lookback pulled per series
+  base_rate:
+    horizons: [1, 3, 5]        # trading days ahead for the historical distribution
+    min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)
+  instruments:
+    - symbol: "GC=F"
+      name: "Gold"
+      options_proxy: "GLD"     # yfinance options proxy for the implied probabilities
+      implied_horizons_days: [1, 3, 30]   # ~1 day / ~3 days / ~1 month
+      # RSI band tuned for gold (a trending market keeps RSI stretched) — NOT 70/30.
+      rsi: { period: 14, overbought: 80, oversold: 40 }
+      range_window: 60         # position within the last N-day range
+      round_step: 50           # gold round-number grid (psychological levels)
+      figures: ["Jerome Powell"]
+      event_keywords: ["FOMC", "Fed", "CPI", "PCE", "Powell", "payroll", "jobs", "inflation"]
+      # `weight` feeds the synthesis "confluence read" lean (transparent scoring).
+      macro_drivers:
+        - { id: "DFII10",   label: "Tasso reale 10y",         source: fred,  supportive_when: falling, weight: 1.0, interpretation: "Tasso reale ↑ = vento contrario per l'oro (costo-opportunità più alto)." }
+        - { id: "T10YIE",   label: "Breakeven inflazione 10y", source: fred,  supportive_when: rising,  weight: 0.5, interpretation: "Inflazione attesa ↑ = supporto storico per l'oro." }
+        - { id: "DTWEXBGS", label: "Dollaro (broad)",         source: fred,  supportive_when: falling, weight: 1.0, interpretation: "Dollaro ↑ = vento contrario per l'oro (prezzato in USD)." }
+        - { id: "^VIX",     label: "VIX",                     source: price, supportive_when: rising,  weight: 0.4, interpretation: "VIX ↑ = clima risk-off, storicamente favorevole all'oro." }
+      # Synthesis weights for NON-macro factors. The lean is the alignment of
+      # CURRENT conditions, NOT a probability/forecast. Context factors
+      # (streak/atr/event) never feed the lean regardless of weight; rsi is a
+      # mean-reversion stretch read, off by default (0).
+      synthesis:
+        weights:
+          trend_ma: 1.0          # prezzo vs MA200 (in salita) / MA50 (in discesa)
+          rsi: 0.0               # stiramento — contesto, escluso dal lean di default

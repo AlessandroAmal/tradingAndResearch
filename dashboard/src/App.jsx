@@ -21,6 +21,7 @@ import Guide from './pages/Guide'
 import Journal from './pages/Journal'
 import OptionsDesk from './pages/OptionsDesk'
 import Alerts from './pages/Alerts'
+import DecisionBoard from './pages/DecisionBoard'
 
 const REFRESH_MS = 60_000
 
@@ -198,6 +199,7 @@ export default function App() {
         <>
           <nav className="nav subnav" aria-label="Sezione trading">
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
+            {tradingTabBtn('decision', 'Decision board')}
             {tradingTabBtn('journal', 'Journal')}
             {tradingTabBtn('options', 'Options')}
             {tradingTabBtn('alerts', 'Alert')}
@@ -234,6 +236,8 @@ export default function App() {
               </div>
             </main>
           )}
+
+          {tradingTab === 'decision' && <DecisionBoard />}
 
           {tradingTab === 'journal' && (
             <Journal instruments={instruments} positions={positions} />

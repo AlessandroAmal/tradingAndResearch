@@ -382,3 +382,72 @@ input[type="number"] { font-family: var(--mono); }
   .topbar { gap: 10px; }
   .nav { flex-wrap: wrap; }
 }
+
+/* =====================================================================
+   Decision board (M9) — confluence at a glance. Colour = STATE only
+   (tailwind/headwind reuse the market-meaning hues; watch = amber).
+   ===================================================================== */
+.conf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.conf-cell {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left-width: 3px; border-radius: var(--r-sm); padding: 8px 10px;
+}
+.conf-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.conf-value { font-size: var(--fs-md); font-weight: 700; }
+.conf-detail { line-height: 1.35; }
+/* state borders/tints — descriptive context, never a buy/sell call */
+.conf-tailwind { border-left-color: var(--pos); }
+.conf-headwind { border-left-color: var(--neg); }
+.conf-watch    { border-left-color: var(--warn); }
+.conf-neutral  { border-left-color: var(--line-strong); }
+
+/* inline state chip (driver table) */
+.conf-state { font-size: var(--fs-xs); font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill); }
+.conf-state.conf-tailwind { color: var(--pos); background: var(--pos-bg); }
+.conf-state.conf-headwind { color: var(--neg); background: var(--neg-bg); }
+.conf-state.conf-watch    { color: var(--warn); background: var(--warn-bg); }
+.conf-state.conf-neutral  { color: var(--muted); background: var(--surface-2); }
+
+.br-head { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+/* honesty banner — the "n insufficiente / mai accaduto" message must stand out */
+.honest-note {
+  margin: 8px 0; padding: 8px 10px; font-size: var(--fs-sm);
+  color: var(--warn); background: var(--warn-bg);
+  border: 1px solid var(--warn); border-radius: var(--r-sm);
+}
+.caveat { margin-top: 10px; font-style: italic; }
+.ctx-h { text-transform: uppercase; letter-spacing: 0.05em; margin: 14px 0 4px; }
+ul.tight { margin: 4px 0; padding-left: 18px; }
+ul.tight li { margin: 2px 0; }
+
+/* --- Sintesi (confluence read) — lean is alignment, NOT a probability --- */
+.lean-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lean-label { font-size: var(--fs-lg); font-weight: 800; }
+.lean-bull { color: var(--pos); }
+.lean-bear { color: var(--neg); }
+.lean-neutral { color: var(--text-dim); }
+/* symmetric -100..+100 bar with a centre axis; fill grows from the centre */
+.lean-bar { position: relative; height: 10px; margin: 8px 0 4px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-pill); overflow: hidden; }
+.lean-axis { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
+.lean-fill { position: absolute; top: 0; bottom: 0; }
+.lean-fill.lean-bull { background: var(--pos); }
+.lean-fill.lean-bear { background: var(--neg); }
+.lean-fill.lean-neutral { background: var(--muted); }
+
+.factors { margin: 10px 0; }
+.factors > summary { cursor: pointer; font-weight: 600; color: var(--text-dim); padding: 4px 0; }
+.risk-table tr.excluded td { opacity: 0.5; text-decoration: line-through; }
+.risk-table tr.excluded td:last-child { text-decoration: none; }
+.fac { font-size: var(--fs-xs); font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill); }
+.fac-bull { color: var(--pos); background: var(--pos-bg); }
+.fac-bear { color: var(--neg); background: var(--neg-bg); }
+.fac-caution { color: var(--warn); background: var(--warn-bg); }
+.fac-neutral { color: var(--muted); background: var(--surface-2); }
+
+.divergence { margin: 10px 0; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.divergence.diverg-notable { border-color: var(--warn); background: var(--warn-bg); }
+.diverg-tag { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--fs-xs); color: var(--text-dim); }
+.caveat-list { list-style: disc; margin-top: 10px; }

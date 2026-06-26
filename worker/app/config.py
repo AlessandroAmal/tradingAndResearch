@@ -61,6 +61,7 @@ class AppConfig:
     figures: list[dict[str, Any]] = field(default_factory=list)
     options: dict[str, Any] = field(default_factory=dict)
     alerts: dict[str, Any] = field(default_factory=dict)
+    decision_board: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # --- convenience accessors -------------------------------------
@@ -107,6 +108,25 @@ class AppConfig:
     @property
     def alerts_cron(self) -> str:
         return os.getenv("ALERTS_CRON", self.schedule.get("alerts_cron", "*/10 * * * *"))
+
+    # --- decision board (M9) ---------------------------------------
+    @property
+    def decision_board_enabled(self) -> bool:
+        return bool((self.decision_board or {}).get("enabled", False))
+
+    @property
+    def macro_provider(self) -> str:
+        return str(dict((self.decision_board or {}).get("macro", {})).get("provider", "fred"))
+
+    @property
+    def macro_cron(self) -> str:
+        # Macro data is daily — once a day after the US session is plenty.
+        return os.getenv("MACRO_CRON", self.schedule.get("macro_cron", "30 22 * * *"))
+
+    @property
+    def decision_cron(self) -> str:
+        # After prices/macro/options have refreshed.
+        return os.getenv("DECISION_CRON", self.schedule.get("decision_cron", "0 0 * * *"))
 
     @property
     def alert_cooldown_seconds(self) -> int:
@@ -256,5 +276,6 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         figures=list(data.get("figures", [])),
         options=dict(data.get("options", {})),
         alerts=dict(data.get("alerts", {})),
+        decision_board=dict(data.get("decision_board", {})),
         raw=data,
     )

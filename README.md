@@ -15,6 +15,8 @@ catalysts, and a manual position-entry form.
   limits, breach flags) + trade journal with on-demand AI review.
 - **Phase 4 (M8)** — Telegram alerts (standing flags + user price/IV thresholds,
   edge-triggered + cooldown).
+- **Phase 4 (M9)** — decision board (gold first): FRED macro drivers + technicals +
+  honest historical base rate (always shows `n`) + option-implied market odds.
 
 > **Read-only by design.** No order execution anywhere. Positions are *tracked*,
 > not placed. Not financial advice.
@@ -359,6 +361,65 @@ python -m app.main seed     # seeds the standing alert rules
 # (e.g. NVDA price ≥ 1) so it triggers on the next prices run, then:
 python -m app.main prices   # so there's a current price
 python -m app.main alerts   # evaluates + sends to Telegram (or logs "skipped" without a token)
+```
+
+---
+
+## Phase 4 — Decision board (M9)
+
+A per-instrument confluence cockpit, **implemented first for gold (`GC=F`)** and
+generalised by config (`decision_board.instruments` in `config.yaml`). It assembles
+the context you weigh *before* a trade — **it is NOT a signal and NEVER a
+prediction** (CLAUDE.md §1, §5). **Apply migration `0011_decision_board.sql`** and
+set `FRED_API_KEY` in the worker `.env` ([free key](https://fredaccount.stlouisfed.org/apikeys)).
+
+- **One new feed only — FRED** behind a `MacroProvider` interface
+  (`worker/app/providers/macro/`). Series (daily, verified at build): real 10y
+  yield `DFII10`, 10y breakeven `T10YIE`, broad dollar `DTWEXBGS`; the VIX driver
+  reuses `^VIX` prices. Observations land in **`macro_series`**. Everything else is
+  reuse: yfinance prices, the calendar, key-figures, the options desk / Black-Scholes.
+- **Technicals** (`worker/app/technicals.py`, pure + tested): consecutive streak,
+  position vs MA20/50/200, ATR(14), RSI(14) with **configurable** thresholds (gold
+  default 80/40, **not** 70/30), range position, distance to round numbers.
+- **Historical base rate** (`worker/app/base_rates.py`, pure + tested) — the honest
+  core: for the current streak it reports how many times (`n`) it occurred and what
+  happened next (% up, mean move). **`n` is always shown**; below a configurable
+  threshold → *"campione insufficiente — nessuna conclusione"*; a never-seen streak
+  → *"mai accaduto: nessuna base statistica"*, **no probability**. It does **not**
+  compute a "rebound probability" (no gambler's fallacy).
+- **Option-implied probabilities** (`worker/app/decision/implied.py`) on the GLD
+  proxy: expected move ±% and risk-neutral P(above/below) at ~1d / ~3d / ~1m —
+  labelled as the **market's odds, not a forecast**.
+- **Confluence read** (`worker/app/decision/synthesis.py`, pure + tested): a
+  TRANSPARENT lean. Each factor is classified bullish/bearish/neutral for the
+  instrument with a **configurable weight**; macro factors reuse `supportive_when`,
+  trend uses MA200-rising / MA50-falling. Aggregates to a **−100..+100 lean** with a
+  qualitative label. Honesty enforced in code: it is the **alignment of current
+  conditions, NOT a probability** — there is deliberately **no "X% up/down" field**;
+  context factors (ATR/streak/event) never feed the lean; missing data excludes the
+  factor. It also computes the **conditions↔market divergence** vs the implied odds
+  (e.g. "conditions bearish but market ~neutral → maybe already priced in").
+- **Assembly** (`worker/app/decision/board.py`): macro drivers + technicals + base
+  rate + implied probs + confluence read + upcoming events + Powell statements → one
+  snapshot per instrument in **`decision_boards`** (synthesis lives in the board JSON
+  — **no new table**). Optional **non-directional** AI synthesis
+  (`worker/app/ai/decision.py`) — describes tensions/uncertainty, never calls direction.
+- **Dashboard "Decision board" view** (Trading → Decision board): top **Sintesi**
+  section (lean + strength bar, expandable per-factor breakdown, conditions↔market
+  divergence, fixed caveats), then confluence grid (colour = state only), base rate
+  with `n` prominent + honest caveats, implied probabilities by horizon, optional AI
+  summary, macro/events/figures context. Tooltips + Guide §9 (confluence read & why
+  it is not a probability, MA200, RSI, ATR, base rate, implied probability).
+- **Schema (no drift):** two additive tables in `0011`; `macro_series` is distinct
+  from `gas_fundamentals`; no column renames anywhere.
+
+### Try it
+```bash
+# apply 0011 and set FRED_API_KEY, then (worker venv active):
+python -m app.main prices     # ensure gold + ^VIX history exists
+python -m app.main macro      # pull FRED series -> macro_series
+python -m app.main decision   # assemble + save the gold board snapshot
+# then open the dashboard: Trading -> Decision board
 ```
 
 ---

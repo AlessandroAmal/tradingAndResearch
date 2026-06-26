@@ -290,6 +290,63 @@ class SupabaseStorage:
             or []
         )
 
+    def get_price_history(self, instrument_id: str, limit: int) -> list[dict[str, Any]]:
+        if not instrument_id:
+            return []
+        return (
+            self._client.table("prices")
+            .select("ts, open, high, low, close")
+            .eq("instrument_id", instrument_id)
+            .order("ts", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    # --- decision board (M9) --------------------------------------
+    def upsert_macro_series(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        self._client.table("macro_series").upsert(
+            rows, on_conflict="series_id,obs_date"
+        ).execute()
+        log.info("Upserted %d macro observations", len(rows))
+
+    def get_macro_series(self, series_id: str, limit: int) -> list[dict[str, Any]]:
+        return (
+            self._client.table("macro_series")
+            .select("value, obs_date")
+            .eq("series_id", series_id)
+            .order("obs_date", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def list_statements_by_figure(self, figure: str, limit: int) -> list[dict[str, Any]]:
+        return (
+            self._client.table("figure_statements")
+            .select("figure, role, statement, url, stated_at, affected_instruments, why_it_matters")
+            .eq("figure", figure)
+            .order("stated_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
+    def upsert_decision_board(self, symbol: str, board: dict[str, Any]) -> None:
+        row = {
+            "symbol": symbol,
+            "name": board.get("name"),
+            "board": board,
+            "snapshot_at": board.get("snapshot_at"),
+        }
+        self._client.table("decision_boards").upsert(row, on_conflict="symbol").execute()
+        log.info("Decision board snapshot upserted for %s", symbol)
+
     def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
         from datetime import datetime, timezone
 

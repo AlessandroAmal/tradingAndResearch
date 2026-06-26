@@ -189,6 +189,25 @@ export async function fetchHedgeProposals() {
     .order('symbol', { ascending: true })
 }
 
+// --- Decision board (M9) ---
+// Available per-instrument boards (gold first). One snapshot per symbol.
+export async function fetchDecisionBoards() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('decision_boards')
+    .select('symbol, name, snapshot_at')
+    .order('symbol', { ascending: true })
+}
+
+export async function fetchDecisionBoard(symbol) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('decision_boards')
+    .select('symbol, name, board, snapshot_at')
+    .eq('symbol', symbol)
+    .maybeSingle()
+}
+
 // Recent key-figure statements with their AI impact mapping.
 export async function fetchKeyFigures(limit = 15) {
   if (!isConfigured) return NOT_CONFIGURED

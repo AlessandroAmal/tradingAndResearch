@@ -16,13 +16,16 @@ from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
 from .ingestion.figures_job import run_figures_ingestion
 from .ingestion.impact_job import run_impact_mapping
+from .ingestion.macro_job import run_macro_ingestion
 from .ingestion.news_job import run_news_ingestion
 from .ingestion.options_job import run_options_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.tagging_job import run_tagging
+from .decision import run_decision_board
 from .logging_setup import get_logger
 from .providers.calendar import build_calendar_provider
 from .providers.figures import build_figure_source
+from .providers.macro import build_macro_provider
 from .notify import build_notifier
 from .providers.news import build_news_providers
 from .providers.options import build_options_provider
@@ -40,6 +43,7 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
     figure_source = build_figure_source(cfg)
     options_provider = build_options_provider(cfg.options_provider)
     notifier = build_notifier(cfg)
+    macro_provider = build_macro_provider(cfg.macro_provider) if cfg.decision_board_enabled else None
 
     def _prices() -> None:
         try:
@@ -170,9 +174,33 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
             id="ai_briefing_intraday", max_instances=1, coalesce=True,
         )
 
+    # --- decision board (M9) — macro feed + assembly -------------------
+    if cfg.decision_board_enabled and macro_provider is not None:
+        def _macro() -> None:
+            try:
+                run_macro_ingestion(cfg, storage, macro_provider)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Macro job crashed: %s", exc)
+
+        def _decision() -> None:
+            try:
+                run_decision_board(cfg, storage, options_provider, ai)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Decision board job crashed: %s", exc)
+
+        sched.add_job(
+            _macro, CronTrigger.from_crontab(cfg.macro_cron),
+            id="macro_ingestion", max_instances=1, coalesce=True,
+        )
+        sched.add_job(
+            _decision, CronTrigger.from_crontab(cfg.decision_cron),
+            id="decision_board", max_instances=1, coalesce=True,
+        )
+
     log.info(
-        "Scheduler ready — prices:'%s' calendar:'%s' news:'%s' ai:%s",
+        "Scheduler ready — prices:'%s' calendar:'%s' news:'%s' ai:%s decision_board:%s",
         cfg.prices_cron, cfg.calendar_cron, cfg.news_cron,
         "on" if ai is not None else "off",
+        "on" if cfg.decision_board_enabled else "off",
     )
     return sched
