@@ -29,12 +29,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ..technicals import plural_days
+from .fx_signals import cot_lean, rr_lean
 
 BULLISH, BEARISH, NEUTRAL = "bullish", "bearish", "neutral"
 
 # Context factors never contribute to the directional lean, regardless of any
 # configured weight — they are genuinely non-directional.
-_CONTEXT_ONLY = {"streak", "atr", "event_risk"}
+_CONTEXT_ONLY = {"streak", "atr", "event_risk", "expected_move"}
 
 # Default weights (configurable per instrument under decision_board.*.synthesis).
 DEFAULT_WEIGHTS = {
@@ -43,6 +44,8 @@ DEFAULT_WEIGHTS = {
     "streak": 0.0,       # context only
     "atr": 0.0,          # context only
     "event_risk": 0.0,   # caution flag, never directional
+    "skew": 0.0,         # FX risk reversal lean (off unless configured)
+    "cot": 0.0,          # FX positioning, contrarian only at extremes
 }
 
 CAVEATS = [
@@ -201,6 +204,54 @@ def _atr_factor(technicals: Mapping) -> dict:
     return _factor("atr", "ATR / volatilità", NEUTRAL, 0.0, kind="context", detail=detail)
 
 
+def _fx_factors(fx: Mapping, weights: Mapping) -> list[dict]:
+    """FX desk signals as labelled factors (skew lean, COT contrarian, expected
+    move as context). All real (priced/measured), never a directional probability."""
+    out: list[dict] = []
+
+    # Skew / risk reversal -> lean. Use the longest reliable horizon; else first.
+    rrs = fx.get("risk_reversal") or []
+    reliable = [r for r in rrs if r.get("rr") is not None and r.get("reliability") != "low"]
+    chosen = (max(reliable, key=lambda r: r.get("days_to_expiry", 0)) if reliable
+              else next((r for r in rrs if r.get("rr") is not None), None))
+    if chosen is not None:
+        cls = {"bearish": BEARISH, "bullish": BULLISH}.get(rr_lean(chosen["rr"]), NEUTRAL)
+        w = float(weights.get("skew", 0.0))
+        kind = "directional" if (w > 0 and chosen.get("reliability") != "low") else "context"
+        pct = chosen.get("percentile")
+        out.append(_factor(
+            "skew", "Skew / risk reversal", cls, w, kind=kind,
+            detail=f"RR 25Δ {chosen['rr']:+.3f}"
+            + (f" · {pct * 100:.0f}° pct" if pct is not None else "")
+            + f" ({chosen.get('reliability')}) — bias di flussi/coperture",
+        ))
+
+    # COT positioning — contrarian ONLY at the extremes.
+    cot = fx.get("cot")
+    if cot and cot.get("state") in ("crowded_long", "crowded_short"):
+        cls = {"bearish": BEARISH, "bullish": BULLISH}.get(cot_lean(cot["state"]), NEUTRAL)
+        w = float(weights.get("cot", 0.0))
+        kind = "directional" if w > 0 else "context"
+        pc = cot.get("percentile")
+        out.append(_factor(
+            "cot", "Posizionamento COT", cls, w, kind=kind,
+            detail=f"{'molto long' if cot['state'] == 'crowded_long' else 'molto short'}"
+            + (f" ({pc * 100:.0f}° pct)" if pc is not None else "") + " — rischio reversal (contrarian)",
+        ))
+    elif cot:
+        pc = cot.get("percentile")
+        out.append(_factor("cot", "Posizionamento COT", NEUTRAL, 0.0, kind="context",
+                           detail=f"posizionamento non estremo{f' ({pc * 100:.0f}° pct)' if pc is not None else ''}"))
+
+    # Expected move on events — context (magnitude, never direction).
+    em = fx.get("expected_move_events") or []
+    if em:
+        nearest = em[0]
+        out.append(_factor("expected_move", "Movimento atteso (evento)", NEUTRAL, 0.0, kind="context",
+                           detail=f"il mercato prezza ±{nearest.get('expected_move_pct', 0):.1f}% su «{nearest.get('event')}» ({nearest.get('event_date')})"))
+    return out
+
+
 def _event_factor(next_event: Mapping | None) -> dict:
     if not next_event:
         return _factor("event_risk", "Rischio evento", NEUTRAL, 0.0, kind="context",
@@ -291,8 +342,12 @@ def confluence_read(
     implied: Mapping | None,
     next_event: Mapping | None,
     weights: Mapping | None = None,
+    fx: Mapping | None = None,
 ) -> dict:
-    """Build the transparent confluence read. Pure: no I/O."""
+    """Build the transparent confluence read. Pure: no I/O.
+
+    `fx` (optional) adds FX desk factors (skew lean, COT contrarian at extremes,
+    expected-move context) — used by EUR/USD; absent for gold."""
     w = {**DEFAULT_WEIGHTS, **dict(weights or {})}
 
     factors: list[dict] = []
@@ -303,6 +358,8 @@ def confluence_read(
     factors.append(_streak_factor(technicals or {}))
     factors.append(_atr_factor(technicals or {}))
     factors.append(_event_factor(next_event))
+    if fx:
+        factors.extend(_fx_factors(fx, w))
 
     # Lean: weighted mean of {-1,0,+1} over INCLUDED, weighted, directional,
     # NON-context factors. Context factors never contribute (no fabricated direction).

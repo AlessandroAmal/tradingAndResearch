@@ -121,7 +121,9 @@ def test_run_decision_board_assembles_and_saves():
     storage = FakeStorage()
     prov = FakeOptionsProvider()
     res = run_decision_board(cfg, storage, prov, ai=None)
-    assert res["ok"] == 1 and res["failed"] == 0
+    # Config now has GC=F (rich fake data) + EUR/USD (sparse here); none should fail.
+    assert res["failed"] == 0 and res["ok"] >= 1
+    assert "GC=F" in storage.saved
 
     board = storage.saved["GC=F"]
     # Macro drivers resolved with direction + context state.

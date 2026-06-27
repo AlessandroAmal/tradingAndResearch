@@ -92,6 +92,15 @@ export const BACKTEST_HELP = [
 ]
 export const BACKTEST_HELP_BY_KEY = byKey(BACKTEST_HELP)
 
+// --- FX desk signals (EUR/USD tooltips + §9) --------------------------
+export const FX_HELP = [
+  { key: 'skew', label: 'Skew / Risk reversal', text: 'Risk reversal a 25 delta = IV(put 25Δ) − IV(call 25Δ), interpolata dalla smile (proxy FXE). Positivo = put più care = bias ribassista (dove si concentrano flussi e coperture); negativo = bias rialzista. È dove si concentra il mercato, NON una previsione. Se la smile è rada, l’affidabilità è bassa e non pesa nel lean.' },
+  { key: 'expected_move_event', label: 'Movimento atteso (evento)', text: 'Il movimento ±% che il mercato prezza nelle opzioni fino alla scadenza che abbraccia il prossimo evento (FOMC/BCE/CPI/NFP). È un’ampiezza, NON una direzione.' },
+  { key: 'event_behaviour', label: 'Comportamento storico evento', text: 'Per gli eventi passati dello stesso tipo: movimento assoluto mediano nel giorno e quante volte il primo movimento è PROSEGUITO vs si è INVERTITO nei giorni dopo, con n sempre visibile. Frequenza storica, non una previsione; sotto soglia → "campione insufficiente".' },
+  { key: 'cot', label: 'Posizionamento COT', text: 'Posizione netta dei Leveraged Funds (COT della CFTC) sul future EUR, come percentile su ~3 anni. >90° = molto long → rischio reversal; <10° = molto short → rischio squeeze; in mezzo poco segnale. Ritardo martedì→venerdì, utile come contrarian solo agli estremi, segnale di swing non intraday.' },
+]
+export const FX_HELP_BY_KEY = byKey(FX_HELP)
+
 // helpers to build definition lists from the keyed dicts (same texts as tooltips)
 const dl = (dict, keys) => keys.map((k) => ({ term: dict[k].label, def: dict[k].text }))
 
@@ -252,6 +261,7 @@ export const GUIDE_SECTIONS = [
   {
     id: 'decision', label: '9 · Decision board', blocks: [
       { type: 'p', text: 'Una vista per strumento (per ora l’oro) che raccoglie in un colpo d’occhio le condizioni che pesi PRIMA di un trade: driver macro, tecnica, una base rate storica onesta e le probabilità implicite nei prezzi delle opzioni. NON è un segnale e NON è una previsione: è il quadro che valuti tu. Il colore indica solo lo stato (favorevole/contrario/attenzione), mai un’azione.' },
+      { type: 'p', text: 'Disponibile per più strumenti (seleziona in alto): i driver cambiano per strumento. Per l’oro contano tasso reale, dollaro e VIX; per EUR/USD il driver chiave è il DIFFERENZIALE di tassi Fed-BCE (Fed funds − tasso deposito BCE): se si stringe, tende a sostenere l’euro. Le soglie RSI sono tarate per strumento (oro più larghe, EUR/USD standard 30/70).' },
       { type: 'h', text: 'Sintesi (lettura di confluenza)' },
       { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['confluence_read', 'lean', 'factor_breakdown', 'divergence']) },
       { type: 'note', text: 'La lettura è l’allineamento delle condizioni ATTUALI, NON una probabilità: per questo non vedrai mai un “X% sale/scende” calcolato da noi. L’unica probabilità del futuro mostrata è quella IMPLICITA nei prezzi delle opzioni (gli odds del mercato). Il confronto condizioni↔mercato è l’output più utile: se le condizioni puntano da una parte ma il mercato è ~neutro, spesso il movimento è già prezzato.' },
@@ -264,6 +274,8 @@ export const GUIDE_SECTIONS = [
       { type: 'note', text: 'Uno streak lungo è spesso il segno di un trend forte, non di un rimbalzo garantito. Mostriamo sempre n: se è troppo piccolo, “campione insufficiente — nessuna conclusione”; se quello streak non si è mai visto, “mai accaduto: nessuna base statistica”, NON una probabilità. La rarità non implica l’inversione.' },
       { type: 'h', text: 'Probabilità implicite dalle opzioni' },
       { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['implied_prob', 'expected_move']) },
+      { type: 'h', text: 'Segnali FX da desk (EUR/USD)' },
+      { type: 'dl', items: dl(FX_HELP_BY_KEY, ['skew', 'expected_move_event', 'event_behaviour', 'cot']) },
       { type: 'h', text: 'Sintesi AI (opzionale)' },
       { type: 'p', text: 'Quando attiva, mette in parole il setup e segnala le tensioni e l’incertezza. Per regola NON fa mai una chiamata direzionale (sale/scende, compra/vendi): descrive le condizioni, non predice.' },
     ],

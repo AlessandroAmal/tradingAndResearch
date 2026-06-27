@@ -4,7 +4,7 @@ import { generateAi, apiConfigured } from '../api/control'
 import { probAbove } from '../lib/options'
 import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
 import InfoTip from '../components/InfoTip'
-import { DECISION_HELP_BY_KEY as DH } from '../data/guide'
+import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH } from '../data/guide'
 
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
@@ -93,6 +93,7 @@ export default function DecisionBoard() {
           <ConfluenceBoard rows={board.confluence || []} nowMs={nowMs} />
           <BaseRatePanel br={board.base_rate} />
           <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
+          {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
           <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
           <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
         </>
@@ -475,6 +476,113 @@ function Context({ drivers, events, figures, nowMs }) {
       )}
     </section>
   )
+}
+
+// FX desk signals (EUR/USD): skew/RR, expected move on events, historical event
+// behaviour (with n), COT positioning. All real (priced/measured), not forecasts.
+function FxSignals({ fx }) {
+  const rr = fx.risk_reversal || []
+  const em = fx.expected_move_events || []
+  const beh = fx.event_behaviour?.by_event || {}
+  const cot = fx.cot
+  const behEntries = Object.entries(beh).filter(([, v]) => v && v.n > 0)
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Segnali FX (desk)</h2>
+        <span className="muted small">reali: prezzati o misurati · non previsioni</span>
+      </header>
+
+      {/* Skew / risk reversal */}
+      <h3 className="ctx-h muted small">Skew / Risk reversal <InfoTip text={FH.skew.text} label={FH.skew.label} /></h3>
+      {rr.length === 0 && <p className="muted small">Smile FXE non disponibile.</p>}
+      {rr.length > 0 && (
+        <div className="risk-table-wrap">
+          <table className="risk-table">
+            <thead><tr><th>Orizzonte</th><th>RR 25Δ</th><th>Percentile</th><th>Affidabilità</th><th>Bias</th></tr></thead>
+            <tbody>
+              {rr.map((h) => (
+                <tr key={h.target_days}>
+                  <td>~{h.target_days}g</td>
+                  <td>{h.rr == null ? '—' : h.rr.toFixed(3)}</td>
+                  <td>{h.percentile == null ? '—' : `${(h.percentile * 100).toFixed(0)}°`}</td>
+                  <td className={h.reliability === 'low' ? 'warn' : 'muted'}>{h.reliability === 'low' ? 'bassa' : 'ok'}</td>
+                  <td><span className={`fac ${facClassFromLean(h.lean)}`}>{leanLabel(h.lean)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Expected move on events */}
+      <h3 className="ctx-h muted small">Movimento atteso sugli eventi <InfoTip text={FH.expected_move_event.text} label={FH.expected_move_event.label} /></h3>
+      {em.length === 0 && <p className="muted small">Nessun evento imminente con scadenza opzioni utile.</p>}
+      <ul className="tight">
+        {em.map((e, i) => (
+          <li key={i}>Il mercato prezza <strong>±{fmtNum(e.expected_move_pct, 1)}%</strong> su «{e.event}» <span className="muted small">({e.event_date}, scad. {e.expiry})</span></li>
+        ))}
+      </ul>
+
+      {/* Historical event behaviour */}
+      <h3 className="ctx-h muted small">Comportamento storico sugli eventi <InfoTip text={FH.event_behaviour.text} label={FH.event_behaviour.label} /></h3>
+      {behEntries.length === 0 && <p className="muted small">Storico eventi non disponibile.</p>}
+      {behEntries.length > 0 && (
+        <div className="risk-table-wrap">
+          <table className="risk-table">
+            <thead><tr><th>Evento</th><th>n</th><th>Mov. mediano</th><th>% prosegue</th><th>% inverte</th></tr></thead>
+            <tbody>
+              {behEntries.map(([title, v]) => (
+                <tr key={title}>
+                  <td>{title}</td>
+                  <td className={v.status === 'insufficient' ? 'warn' : ''}>{v.n}{v.status === 'insufficient' ? ' (insuff.)' : ''}</td>
+                  <td>{v.median_abs_move_pct == null ? '—' : `±${fmtNum(v.median_abs_move_pct, 2)}%`}</td>
+                  <td>{v.pct_continued == null ? '—' : fmtPct(v.pct_continued * 100)}</td>
+                  <td>{v.pct_reversed == null ? '—' : fmtPct(v.pct_reversed * 100)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* COT positioning */}
+      <h3 className="ctx-h muted small">Posizionamento COT <InfoTip text={FH.cot.text} label={FH.cot.label} /></h3>
+      {!cot || cot.state === 'n/d' ? (
+        <p className="muted small">{cot?.note || 'COT non disponibile.'}</p>
+      ) : (
+        <>
+          <div className="stat-grid">
+            <Stat label="Netto Lev. Funds" value={cot.net == null ? '—' : fmtNum(cot.net, 0)} />
+            <Stat label="Percentile (~3a)" value={cot.percentile == null ? '—' : `${(cot.percentile * 100).toFixed(0)}°`} />
+            <Stat label="Stato" value={cotLabel(cot.state)} cls={cot.state === 'neutral' ? '' : 'warn'} />
+            <Stat label="Al" value={cot.as_of || '—'} />
+          </div>
+          <p className="muted small">{cot.note}</p>
+        </>
+      )}
+
+      <p className="muted small caveat">{fx.note}</p>
+    </section>
+  )
+}
+
+function Stat({ label, value, cls = '' }) {
+  return (
+    <div className="stat">
+      <span className="stat-label">{label}</span>
+      <span className={`stat-value ${cls}`}>{value}</span>
+    </div>
+  )
+}
+function facClassFromLean(lean) {
+  return { bullish: 'fac-bull', bearish: 'fac-bear' }[lean] || 'fac-neutral'
+}
+function leanLabel(lean) {
+  return { bullish: 'rialzista', bearish: 'ribassista', neutral: 'neutro' }[lean] || 'n/d'
+}
+function cotLabel(state) {
+  return { crowded_long: 'molto long (rischio reversal)', crowded_short: 'molto short (rischio squeeze)', neutral: 'non estremo' }[state] || state
 }
 
 function stateLabel(state) {

@@ -384,6 +384,12 @@ decision_board:
       high_pct: 0.66           # level at/above this percentile = "high" regime
       low_pct: 0.34            # level at/below this percentile = "low" regime
       use_regime: true         # false = classify by daily direction only (legacy)
+    # Derived series computed from FRED components and stored in macro_series like
+    # any other (drivers reference them by id). EUR/USD's main driver is the
+    # Fed–ECB policy-rate differential = Fed funds target upper (DFEDTARU) minus
+    # ECB deposit facility rate (ECBDFR). Both verified daily FRED series.
+    derived:
+      - { id: "FED_ECB_SPREAD", op: subtract, left: "DFEDTARU", right: "ECBDFR" }
   base_rate:
     horizons: [1, 3, 5]        # trading days ahead for the historical distribution
     min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)
@@ -412,3 +418,36 @@ decision_board:
         weights:
           trend_ma: 1.0          # prezzo vs MA200 (in salita) / MA50 (in discesa)
           rsi: 0.0               # stiramento — contesto, escluso dal lean di default
+    # --- EUR/USD: driver diversi dall'oro; il principale è il differenziale Fed-BCE.
+    - symbol: "EURUSD=X"
+      name: "EUR/USD"
+      options_proxy: "FXE"       # ETF euro USA con opzioni (liquidità sottile -> prob. implicite da leggere con cautela)
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }   # STANDARD (EUR/USD poco volatile), non 80/40 dell'oro
+      range_window: 60
+      round_step: 0.05           # numeri tondi FX (1.05 / 1.10 / 1.15 / 1.20)
+      figures: ["Jerome Powell"]
+      event_keywords: ["FOMC", "Fed", "ECB", "Lagarde", "CPI", "PCE", "Powell", "payroll", "inflation"]
+      macro_drivers:
+        - { id: "FED_ECB_SPREAD", label: "Differenziale tassi Fed-BCE", source: fred,  supportive_when: falling, weight: 1.5, interpretation: "Differenziale Fed-BCE che si stringe (↓) = supporto per EUR/USD. Driver principale." }
+        - { id: "DGS2",     label: "Tasso 2y USA",          source: fred,  supportive_when: falling, weight: 0.8, interpretation: "Tasso 2y USA ↓ = meno carry sul dollaro = supporto per EUR." }
+        - { id: "DFII10",   label: "Tasso reale 10y USA",   source: fred,  supportive_when: falling, weight: 0.6, interpretation: "Tasso reale USA ↓ = dollaro meno attraente." }
+        - { id: "DTWEXBGS", label: "Dollaro (broad)",       source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Dollaro ↓ = EUR/USD ↑ (peso basso: parzialmente circolare)." }
+        - { id: "^VIX",     label: "VIX",                   source: price, supportive_when: falling, weight: 0.2, interpretation: "VIX ↑ = risk-off → dollaro rifugio → EUR giù (contesto, peso basso)." }
+      synthesis:
+        weights:
+          trend_ma: 1.0
+          rsi: 0.0
+          skew: 0.5            # lean da risk reversal (solo se smile affidabile)
+          cot: 0.5            # posizionamento COT, contrarian solo agli estremi
+      # --- FX desk signals (skew/RR, expected move, event behaviour, COT) ---
+      fx_signals: true
+      fx:
+        rr_horizons_days: [1, 7, 30]   # ~1g / 1 settimana / 1 mese
+        history_days: 3650             # ~10y per il comportamento storico sugli eventi
+        event_follow_days: 3           # persistenza vs inversione nei giorni dopo
+        event_min_sample: 20           # sotto questo n -> "campione insufficiente"
+      positioning:
+        provider: cftc                 # COT (CFTC TFF, Leveraged Funds)
+        market: "EURO FX"              # CME Euro FX contract (6E)
+        lookback_weeks: 156            # ~3 anni per il percentile

@@ -25,8 +25,9 @@ from ..base_rates import STREAK_CAVEAT, streak_base_rate
 from ..providers.options import OptionsProvider
 from ..storage import Storage
 from .. import technicals as tech
-from .implied import implied_probabilities
+from .implied import _pick_expiry, implied_probabilities
 from .synthesis import classify_macro_state, confluence_read
+from . import fx_signals as fxs
 
 log = get_logger("decision.board")
 
@@ -200,6 +201,118 @@ def build_confluence(
     return rows
 
 
+# --- FX desk signals (EUR/USD) ---------------------------------------
+def _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, today) -> dict:
+    """Skew/RR (+percentile via macro_series), expected move on events, historical
+    event behaviour, and COT positioning. All real (priced/measured) signals."""
+    fxcfg = dict(inst.get("fx", {}) or {})
+    proxy = inst.get("options_proxy") or inst["symbol"]
+    r = cfg.risk_free_rate
+
+    # --- skew / risk reversal per horizon ---
+    skew: list[dict] = []
+    spot = None
+    expiries: list[str] = []
+    try:
+        spot = options_provider.get_spot(proxy)
+        expiries = options_provider.list_expiries(proxy) if spot else []
+    except Exception as exc:  # noqa: BLE001
+        log.warning("FX skew: chains unavailable for %s: %s", proxy, exc)
+    chain_cache: dict[str, list] = {}
+    for target in fxcfg.get("rr_horizons_days", [1, 7, 30]):
+        pick = _pick_expiry(expiries, today, target) if expiries else None
+        if not pick:
+            continue
+        expiry, dte = pick
+        if expiry not in chain_cache:
+            try:
+                chain_cache[expiry] = options_provider.fetch_chain(proxy, expiry)
+            except Exception:  # noqa: BLE001
+                chain_cache[expiry] = []
+        T = max(dte, 0) / 365.0
+        rr = (fxs.risk_reversal_from_quotes(chain_cache[expiry], spot, T, r)
+              if (chain_cache[expiry] and spot and T > 0) else {"rr": None, "reliability": "low"})
+        pct = None
+        if rr.get("rr") is not None:
+            sid = f"{proxy}_RR_{target}D"
+            try:
+                storage.upsert_macro_series([{ "series_id": sid, "obs_date": today.isoformat(),
+                                               "value": rr["rr"], "source": "derived"}])
+                hist = [float(x["value"]) for x in storage.get_macro_series(sid, 400)
+                        if x.get("value") is not None]
+                pct = _percentile(hist, rr["rr"]) if hist else None
+            except Exception:  # noqa: BLE001
+                pct = None
+        skew.append({"target_days": target, "expiry": expiry, "days_to_expiry": dte,
+                     "percentile": pct, "lean": fxs.rr_lean(rr.get("rr")), **rr})
+
+    # --- expected move on the next events (IV term structure) ---
+    expected = fxs.expected_move_on_events(events, implied.get("horizons", []), today=today)
+
+    # --- historical event behaviour (long history + past seeded events) ---
+    behaviour = _fx_event_behaviour(cfg, inst, today, fxcfg)
+
+    # --- COT positioning ---
+    cot = _fx_cot(inst, fxcfg)
+
+    return {
+        "underlying": proxy, "risk_reversal": skew, "expected_move_events": expected,
+        "event_behaviour": behaviour, "cot": cot,
+        "note": "Segnali FX reali (prezzati nelle opzioni o misurati dai dati), NON previsioni.",
+    }
+
+
+def _fx_event_behaviour(cfg, inst, today, fxcfg) -> dict:
+    try:
+        from ..backtest.data import load_history
+        from ..providers.prices import build_price_provider
+        from ..providers.calendar.seeded_provider import SeededCalendarProvider
+        pp = build_price_provider(cfg.providers.get("prices", "yfinance"))
+        df = load_history(inst["symbol"], pp, days=int(fxcfg.get("history_days", 2000)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("FX event behaviour: history load failed: %s", exc)
+        return {}
+    dates = [d.date().isoformat() for d in df.index]
+    closes = {d.date().isoformat(): float(c) for d, c in zip(df.index, df["close"])}
+    seed = dict(cfg.raw.get("calendar", {}).get("seed", {}))
+    evs = SeededCalendarProvider(seed).fetch_events(dates[0], today.isoformat()) if dates else []
+    by_title: dict[str, list] = {}
+    for e in evs:
+        by_title.setdefault(e.title, []).append(e.event_time.date())
+    out = {}
+    for title, eds in by_title.items():
+        out[title] = fxs.event_behaviour(
+            dates, closes, eds,
+            follow_days=int(fxcfg.get("event_follow_days", 3)),
+            min_sample=int(fxcfg.get("event_min_sample", 20)),
+        )
+    return {"by_event": out}
+
+
+def _fx_cot(inst, fxcfg) -> dict | None:
+    posc = dict(inst.get("positioning", {}) or {})
+    if not posc:
+        return None
+    try:
+        from ..providers.positioning import build_positioning_provider
+        prov = build_positioning_provider(posc.get("provider", "cftc"))
+        hist = prov.fetch_history(posc.get("market", "EURO FX"),
+                                  lookback_weeks=int(posc.get("lookback_weeks", 156)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("COT fetch failed: %s", exc)
+        return {"state": "n/d", "note": f"COT non disponibile: {exc}"}
+    nets = [c.net for c in hist if c.net is not None]
+    latest = nets[-1] if nets else None
+    st = fxs.positioning_state(nets, latest)
+    last = hist[-1] if hist else None
+    return {
+        **st, "net": latest,
+        "as_of": last.report_date.isoformat() if last else None,
+        "lookback_weeks": int(posc.get("lookback_weeks", 156)),
+        "note": "COT Leveraged Funds (EURO FX). Ritardo mar→ven; contrarian solo agli estremi; swing, non intraday.",
+    }
+
+
 # --- main entry ------------------------------------------------------
 def run_decision_board(
     cfg: AppConfig,
@@ -277,6 +390,14 @@ def run_decision_board(
                 drivers, technicals, base_rate, events[0] if events else None
             )
 
+            # FX desk signals (EUR/USD): skew, expected move, event behaviour, COT.
+            fx = None
+            if inst.get("fx_signals"):
+                try:
+                    fx = _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, today)
+                except Exception as exc:  # noqa: BLE001 — optional enrichment
+                    log.warning("FX signals failed for %s: %s", symbol, exc)
+
             # Synthesis (confluence read) — transparent lean + market divergence.
             synthesis = confluence_read(
                 drivers=drivers,
@@ -284,6 +405,7 @@ def run_decision_board(
                 implied=implied,
                 next_event=events[0] if events else None,
                 weights=dict(inst.get("synthesis", {}).get("weights", {})),
+                fx=fx,
             )
 
             board = {
@@ -299,6 +421,7 @@ def run_decision_board(
                 "figures": figures,
                 "confluence": confluence,
                 "synthesis": synthesis,
+                "fx_signals": fx,
             }
 
             # Optional NON-directional AI synthesis.
