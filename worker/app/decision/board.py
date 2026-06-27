@@ -201,10 +201,15 @@ def build_confluence(
     return rows
 
 
-# --- FX desk signals (EUR/USD) ---------------------------------------
+# --- desk signals (instrument-driven: FX, index, …) ------------------
 def _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, today) -> dict:
     """Skew/RR (+percentile via macro_series), expected move on events, historical
-    event behaviour, and COT positioning. All real (priced/measured) signals."""
+    event behaviour, and COT positioning. All real (priced/measured) signals.
+
+    Instrument-driven: the options proxy (`options_proxy`) and the COT contract
+    (`positioning.market`) come from config — no ticker is hardcoded. Works for
+    EUR/USD (FXE / EURO FX), Nasdaq (QQQ / NASDAQ MINI), and the next ones by
+    config alone."""
     fxcfg = dict(inst.get("fx", {}) or {})
     proxy = inst.get("options_proxy") or inst["symbol"]
     r = cfg.risk_free_rate
@@ -305,11 +310,17 @@ def _fx_cot(inst, fxcfg) -> dict | None:
     latest = nets[-1] if nets else None
     st = fxs.positioning_state(nets, latest)
     last = hist[-1] if hist else None
+    market = posc.get("market", "")
+    # Note is instrument-driven; `positioning.note` lets a config add a caveat
+    # (e.g. for equity indices COT is a weaker signal than FX).
+    base_note = (f"COT Leveraged Funds ({market}). Ritardo mar→ven; "
+                 "contrarian solo agli estremi; swing, non intraday.")
+    extra = posc.get("note")
     return {
         **st, "net": latest,
         "as_of": last.report_date.isoformat() if last else None,
         "lookback_weeks": int(posc.get("lookback_weeks", 156)),
-        "note": "COT Leveraged Funds (EURO FX). Ritardo mar→ven; contrarian solo agli estremi; swing, non intraday.",
+        "note": f"{base_note} {extra}".strip() if extra else base_note,
     }
 
 

@@ -451,3 +451,36 @@ decision_board:
         provider: cftc                 # COT (CFTC TFF, Leveraged Funds)
         market: "EURO FX"              # CME Euro FX contract (6E)
         lookback_weeks: 156            # ~3 anni per il percentile
+    # --- Nasdaq-100: driver di tasso/duration; tesi via news/key-figure, non una serie macro.
+    - symbol: "^NDX"
+      name: "Nasdaq 100"
+      options_proxy: "QQQ"           # opzioni molto liquide -> skew di alta qualità
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }   # standard
+      range_window: 60
+      round_step: 500                # numeri tondi a livello indice (~22-25k)
+      figures: ["Jensen Huang", "Sundar Pichai", "Elon Musk"]
+      event_keywords: ["FOMC", "Fed", "CPI", "PCE", "Powell", "payroll", "inflation", "earnings", "Nvidia", "utili"]
+      # Niente doppio conteggio fra serie di tasso: si usa SOLO il reale 10y ad alto peso.
+      macro_drivers:
+        - { id: "DFII10",       label: "Tasso reale 10y",        source: fred,  supportive_when: falling, weight: 1.5, interpretation: "Tasso reale ↓ = sconto più basso sugli utili futuri = supporto per i tech a lunga duration (driver di valutazione principale)." }
+        - { id: "BAMLH0A0HYM2", label: "Spread High Yield",      source: fred,  supportive_when: falling, weight: 0.8, interpretation: "Spread HY ↓ = condizioni finanziarie più distese, risk-on = supporto." }
+        - { id: "^VIX",         label: "VIX",                    source: price, supportive_when: falling, weight: 0.6, interpretation: "VIX ↓ = risk-on (sopra ~25 = stress, vento contrario)." }
+        - { id: "DTWEXBGS",     label: "Dollaro (broad)",        source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Dollaro ↓ = condizioni globali più distese (contesto, peso basso)." }
+      synthesis:
+        weights:
+          trend_ma: 1.0
+          rsi: 0.0
+          skew: 0.5            # QQQ skew di alta qualità -> lean affidabile
+          cot: 0.0            # per gli indici azionari il COT è debole: solo contesto, non pesa nel lean
+      fx_signals: true
+      fx:
+        rr_horizons_days: [1, 7, 30]
+        history_days: 3650             # ~10y per il comportamento storico sugli eventi
+        event_follow_days: 3
+        event_min_sample: 20
+      positioning:
+        provider: cftc
+        market: "NASDAQ MINI"          # E-mini Nasdaq-100 (NQ) nel report TFF
+        lookback_weeks: 156
+        note: "Per gli indici azionari il COT è un segnale DEBOLE (contano più put/call ratio e flussi): qui è solo contesto. Lo skew QQQ è il read di posizionamento migliore."
