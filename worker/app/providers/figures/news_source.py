@@ -24,13 +24,30 @@ log = get_logger("provider.figures.news")
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
+# Default statement cues: bias the query toward things the figure SAID, not news
+# about their institution. Configurable via news.figures_filter.statement_cues.
+DEFAULT_CUES = [
+    "said", "says", "statement", "remarks", "speech", "testimony",
+    "comments", "warns", "signals", "tells", "told", "reiterates",
+]
+# Default non-statement markers to drop (obituaries etc.). Configurable.
+DEFAULT_DROP = [
+    "obituary", "dies", "died", "death", "funeral", "necrolog",
+    "passes away", "passed away",
+]
+
 
 class NewsFigureSource(FigureSource):
     name = "news"
 
-    def __init__(self, timespan_days: int = 2, max_per_feed: int = 20):
+    def __init__(self, timespan_days: int = 2, max_per_feed: int = 20,
+                 filter_cfg: dict | None = None):
         self._timespan_days = timespan_days
         self._max_per_feed = max_per_feed
+        fc = dict(filter_cfg or {})
+        self._require_name = bool(fc.get("require_name_in_title", True))
+        self._cues = [c.lower() for c in fc.get("statement_cues", DEFAULT_CUES)]
+        self._drop = [d.lower() for d in fc.get("drop_terms", DEFAULT_DROP)]
 
     def fetch(self, figure: dict) -> list[FigureStatement]:
         name = figure.get("name")
@@ -38,21 +55,25 @@ class NewsFigureSource(FigureSource):
             return []
         role = figure.get("role")
         keywords = figure.get("keywords") or [name]
+        match_terms = _match_terms(figure)
 
         items: list[FigureStatement] = []
-        items.extend(self._fetch_google_news(name, role, keywords))
+        items.extend(self._fetch_google_news(name, role, match_terms))
 
         press = figure.get("press_rss")
         if press:
             items.extend(self._fetch_press(name, role, press))
 
-        log.info("Figure '%s': %d raw statements", name, len(items))
+        log.info("Figure '%s': %d statements after filtering", name, len(items))
         return items
 
     # --- Google News RSS search --------------------------------------
-    def _fetch_google_news(self, name, role, keywords) -> list[FigureStatement]:
-        terms = [f'"{k}"' if " " in k else k for k in keywords]
-        query = f"({' OR '.join(terms)}) when:{self._timespan_days}d"
+    def _fetch_google_news(self, name, role, match_terms) -> list[FigureStatement]:
+        # Query: require a name/match term AND (when configured) a statement cue,
+        # so we surface things the figure SAID, not generic institution news.
+        names = " OR ".join(f'"{t}"' if " " in t else t for t in match_terms)
+        cues = f" ({' OR '.join(self._cues)})" if self._cues else ""
+        query = f"({names}){cues} when:{self._timespan_days}d"
         url = (
             f"{GOOGLE_NEWS_RSS}?q={quote_plus(query)}"
             "&hl=en-US&gl=US&ceid=US:en"
@@ -63,6 +84,8 @@ class NewsFigureSource(FigureSource):
             title = (entry.get("title") or "").strip()
             link = entry.get("link")
             if not title or not link:
+                continue
+            if not self._keep(title, match_terms):
                 continue
             out.append(
                 FigureStatement(
@@ -76,6 +99,14 @@ class NewsFigureSource(FigureSource):
             )
         return out
 
+    def _keep(self, title: str, match_terms: list[str]) -> bool:
+        low = title.lower()
+        if any(bad in low for bad in self._drop):
+            return False        # drop obvious non-statements (obituaries etc.)
+        if self._require_name and not any(t.lower() in low for t in match_terms):
+            return False        # the figure must actually be named in the title
+        return True
+
     # --- official press feed -----------------------------------------
     def _fetch_press(self, name, role, press_url) -> list[FigureStatement]:
         parsed = _safe_parse(press_url, label=f"press({name})")
@@ -84,6 +115,9 @@ class NewsFigureSource(FigureSource):
             title = (entry.get("title") or "").strip()
             link = entry.get("link")
             if not title or not link:
+                continue
+            # Official press is curated, but still drop obvious non-statements.
+            if any(bad in title.lower() for bad in self._drop):
                 continue
             out.append(
                 FigureStatement(
@@ -96,6 +130,21 @@ class NewsFigureSource(FigureSource):
                 )
             )
         return out
+
+
+def _match_terms(figure: dict) -> list[str]:
+    """Terms that must appear in a title for it to count as this figure's
+    statement. Config `match_terms` wins; otherwise derive from the name
+    (full name + surname) so 'Powell signals…' matches but 'NY Fed …' doesn't."""
+    explicit = figure.get("match_terms")
+    if explicit:
+        return [str(t) for t in explicit]
+    name = figure.get("name") or ""
+    terms = [name]
+    tokens = name.split()
+    if len(tokens) > 1:
+        terms.append(tokens[-1])   # surname (e.g. "Powell")
+    return [t for t in terms if t]
 
 
 def _safe_parse(url: str, label: str) -> list:

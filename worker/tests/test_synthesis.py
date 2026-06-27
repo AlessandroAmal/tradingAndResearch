@@ -11,7 +11,13 @@ import json
 
 import pytest
 
-from app.decision.synthesis import BEARISH, BULLISH, NEUTRAL, confluence_read
+from app.decision.synthesis import (
+    BEARISH,
+    BULLISH,
+    NEUTRAL,
+    classify_macro_state,
+    confluence_read,
+)
 
 
 def _drivers(dfii_state, dxy_state, *, dfii_dir="up", dxy_dir="down", t10_value=2.3):
@@ -155,6 +161,31 @@ def test_divergence_priced_in_message():
     assert r["market"]["direction"] == NEUTRAL
     assert r["divergence"]["level"] == "notable"
     assert "prezzato" in r["divergence"]["message"]
+
+
+# --- macro level/regime classification -------------------------------
+def test_regime_high_but_falling_is_still_headwind():
+    # Real yield: supportive when FALLING. High level (90th pct) but ticking
+    # down today -> the REGIME (structural headwind) wins, not "favorable".
+    r = classify_macro_state("falling", "down", 0.90, high_pct=0.66, low_pct=0.34)
+    assert r["classification"] == BEARISH and r["state"] == "headwind"
+    assert r["regime"] == "high" and r["move_class"] == BULLISH  # daily move alone looked good
+
+
+def test_regime_low_level_is_tailwind():
+    r = classify_macro_state("falling", "up", 0.10, high_pct=0.66, low_pct=0.34)
+    assert r["classification"] == BULLISH and r["state"] == "tailwind"
+
+
+def test_regime_mid_falls_back_to_daily_move():
+    r = classify_macro_state("falling", "down", 0.50, high_pct=0.66, low_pct=0.34)
+    # mid regime -> use the move: falling is supportive -> bullish
+    assert r["regime"] == "mid" and r["classification"] == BULLISH
+
+
+def test_use_regime_false_uses_move_only():
+    r = classify_macro_state("falling", "down", 0.90, use_regime=False)
+    assert r["classification"] == BULLISH  # ignores the high level
 
 
 def test_divergence_aligned_message():

@@ -78,6 +78,20 @@ export const DECISION_HELP = [
 ]
 export const DECISION_HELP_BY_KEY = byKey(DECISION_HELP)
 
+// --- Backtest / research terms (tooltips + §10) -----------------------
+export const BACKTEST_HELP = [
+  { key: 'oos', label: 'Out-of-sample', text: 'I dati NON usati per scegliere la regola/parametri. È l’unico test onesto: se la regola funziona solo in-sample (sui dati su cui è stata tarata) ma crolla out-of-sample, era overfitting. Qui mostriamo l’out-of-sample in primo piano.' },
+  { key: 'degradation', label: 'Degrado IS→OOS', text: 'Quanto una metrica (es. lo Sharpe) cala dall’in-sample all’out-of-sample. Un calo forte è il segnale tipico di overfitting; poco calo = più robusta (mai una garanzia).' },
+  { key: 'sharpe', label: 'Sharpe ratio', text: 'Rendimento per unità di rischio (volatilità), annualizzato. Più alto = meglio a parità di rischio. Sempre calcolato al NETTO dei costi.' },
+  { key: 'delta_bh', label: 'vs Buy&Hold', text: 'Differenza di rendimento NETTO tra la strategia e il semplice comprare-e-tenere lo stesso strumento. Se la strategia non batte il buy-and-hold netto, non aggiunge valore.' },
+  { key: 'bootstrap', label: 'Bootstrap', text: 'Ricampiona molte volte i rendimenti per stimare un intervallo di confidenza (non un singolo numero) e quanto spesso la strategia NON batte la fortuna o il buy-and-hold. Se la CI dello Sharpe include 0, non è distinguibile dal caso.' },
+  { key: 'p_luck', label: 'P(non > fortuna)', text: 'Frazione dei ricampionamenti in cui lo Sharpe è ≤ 0: quanto è plausibile che il risultato sia solo fortuna. Alta = poco affidabile.' },
+  { key: 'deflated', label: 'Sharpe deflazionato (DSR)', text: 'Correzione per test multipli (Bailey & López de Prado): cercando tra N combinazioni, il MIGLIORE è atteso sembrare buono per puro caso. Il DSR sconta questo numero di tentativi e la non-normalità dei rendimenti. DSR alto (>0.95) = robusto; basso = probabile illusione da data-snooping.' },
+  { key: 'consistency', label: 'Coerenza multi-strumento', text: 'La STESSA regola eseguita su tutto l’universo. Un edge vero appare su più strumenti, non su uno solo in una finestra fortunata.' },
+  { key: 'costs', label: 'Costi & slippage', text: 'Commissioni + spread + slippage dedotti ad ogni trade (in bps, configurabili). I risultati NETTI sono quelli che contano: lordi gonfiano sempre.' },
+]
+export const BACKTEST_HELP_BY_KEY = byKey(BACKTEST_HELP)
+
 // helpers to build definition lists from the keyed dicts (same texts as tooltips)
 const dl = (dict, keys) => keys.map((k) => ({ term: dict[k].label, def: dict[k].text }))
 
@@ -190,6 +204,9 @@ export const GUIDE_SECTIONS = [
       { type: 'dl', items: dl(RISK_HELP_BY_KEY, ['risk_per_trade', 'r_multiple', 'portfolio_heat', 'position_sizing', 'concurrent', 'breach', 'multiplier']) },
       { type: 'h', text: 'Calcolatrice di sizing' },
       { type: 'p', text: 'Inserisci entry, stop e rischio% (e lo strumento, per il moltiplicatore) → ottieni size, rischio aperto e R:R. Usala prima di aprire, per entrare già con la size giusta.' },
+      { type: 'h', text: 'Gate pre-trade (checklist "Nuovo trade")' },
+      { type: 'p', text: 'Prima di registrare una posizione, la checklist calcola rischio €/% (col point value corretto), R/R, heat risultante e n° posizioni, mostra la lettura macro del decision board (con o contro la marea) e produce WARNING chiari quando un numero sfora le tue regole: rischio per trade, heat, posizioni concorrenti, R/R sotto soglia, evento ad alto impatto imminente. I warning NON bloccano — il cockpit è read-only, decidi tu. Alla conferma registra la posizione e crea in automatico una bozza di journal collegata. Il colore indica solo la severità.' },
+      { type: 'note', text: 'Il gate valida DISCIPLINA e RISCHIO, non la direzione: non dà probabilità direzionali né dice "buon/cattivo trade". Mette i tuoi numeri davanti alle tue regole.' },
     ],
   },
   {
@@ -252,7 +269,26 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'onesta', label: '10 · Leggere con onestà', blocks: [
+    id: 'backtest', label: '10 · Ricerca / Backtest', blocks: [
+      { type: 'p', text: 'Un banco di ricerca per MISURARE se una regola tecnica ha davvero un vantaggio (edge) — NON un generatore di segnali. È costruito apposta per rendere VISIBILE l’overfitting, non per nasconderlo. I run si lanciano dal worker (CLI) e si leggono qui.' },
+      { type: 'p', text: 'Nessun look-ahead: il segnale al giorno t usa solo dati fino alla chiusura di t, e l’ingresso avviene all’apertura di t+1 (mai sulla stessa barra che ha generato il segnale). I costi (commissioni+spread+slippage) sono SEMPRE dedotti: contano i risultati NETTI, confrontati col buy-and-hold netto.' },
+      { type: 'h', text: 'Le salvaguardie anti-illusione' },
+      { type: 'dl', items: dl(BACKTEST_HELP_BY_KEY, ['oos', 'degradation', 'costs', 'consistency', 'deflated', 'bootstrap']) },
+      { type: 'note', text: 'Cercando tra molti parametri/regole, il MIGLIORE è atteso sembrare buono per puro caso. Per questo mostriamo la distribuzione di TUTTI i tentativi, il loro numero, e lo Sharpe deflazionato — mai il best-of-N spacciato per edge. E il dato che conta è l’out-of-sample netto, non l’in-sample.' },
+      { type: 'h', text: 'Metriche' },
+      { type: 'dl', items: dl(BACKTEST_HELP_BY_KEY, ['sharpe', 'delta_bh', 'p_luck']) },
+      { type: 'h', text: 'Le regole testabili' },
+      { type: 'ul', items: [
+        'Crossover di medie (es. 50/200) con filtro di trend.',
+        'RSI mean-reversion (compra ipervenduto, esci ipercomprato).',
+        'Breakout di canale (Donchian, max/min a N giorni).',
+        'Mean-reversion su streak: "compra dopo N giorni giù, tieni M giorni" (la regola "5 giù → rimbalza").',
+        'Reversione su Bollinger.',
+      ] },
+    ],
+  },
+  {
+    id: 'onesta', label: '11 · Leggere con onestà', blocks: [
       { type: 'p', text: 'Il filo conduttore del cockpit: niente segnali finti.' },
       { type: 'ul', items: [
         'Le probabilità (POP) sono quelle implicite nei prezzi — gli odds del mercato, non profezie.',

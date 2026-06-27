@@ -38,7 +38,7 @@ log = get_logger("scheduler")
 def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
     sched = BlockingScheduler()
     price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
-    cal_provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"))
+    cal_provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"), cfg)
     news_providers = build_news_providers(cfg)
     figure_source = build_figure_source(cfg)
     options_provider = build_options_provider(cfg.options_provider)

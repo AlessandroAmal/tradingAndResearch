@@ -44,6 +44,8 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
                 "max_concurrent_positions": cfg.max_concurrent_positions,
                 "max_position_deadline_days": cfg.max_position_deadline_days,
                 "deadline_warn_days": cfg.deadline_warn_days,
+                "rr_min": cfg.rr_min,
+                "event_warn_hours": cfg.event_warn_hours,
             }
         )
     except Exception as exc:  # noqa: BLE001 — older DB without 0007; don't block seed

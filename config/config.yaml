@@ -36,6 +36,10 @@ risk:
   deadline_warn_days: 3
   # Default ATR multiple used when suggesting stops.
   default_atr_multiple: 2.0
+  # Pre-trade gate (read-only checklist): below this reward/risk -> warning.
+  rr_min: 1.5
+  # Pre-trade gate: warn if a HIGH-impact event falls within this many hours.
+  event_warn_hours: 48
 
 # --- Trading universe (watchlist) — brief §4 ------------------------
 # `symbol` is the yfinance ticker. `sleeve` groups instruments
@@ -52,11 +56,13 @@ universe:
     asset_class: index
     sleeve: macro
     tradeable_on: "Fineco (CFD/futures, KO options)"
+    contract_multiplier: 20       # E-mini Nasdaq-100: $20 per index point. Confirm for your broker/CFD.
   - symbol: "GC=F"          # Gold (XAU/USD)
     name: "Gold"
     asset_class: commodity
     sleeve: macro
     tradeable_on: "Fineco (CFD/futures, KO options)"
+    contract_multiplier: 100      # COMEX gold: $100 per $1 move (100 oz). Confirm for your broker/CFD.
   - symbol: "EURUSD=X"
     name: "EUR/USD"
     asset_class: fx
@@ -84,18 +90,21 @@ universe:
     asset_class: commodity
     sleeve: commodity
     tradeable_on: "Fineco (CFD/futures, KO options)"
+    contract_multiplier: 25000    # COMEX copper: $25,000 per $1/lb move (25,000 lb). Confirm for your broker/CFD.
   # Sessione europea (opzionale)
   - symbol: "^GDAXI"        # opzionale; in alt. ^STOXX50E (Euro Stoxx 50)
     name: "DAX 40"
     asset_class: index
     sleeve: macro
     tradeable_on: "Fineco (CFD/futures, KO options)"
+    contract_multiplier: 25       # FDAX: €25 per index point. Confirm for your broker/CFD.
   # Energy — sleeve specialistico (vedi M5b)
   - symbol: "NG=F"
     name: "Natural Gas (Henry Hub)"
     asset_class: commodity
     sleeve: energy
     tradeable_on: "Fineco (CFD/futures, KO options)"
+    contract_multiplier: 10000    # NYMEX Henry Hub: $10,000 per $1/MMBtu move (10,000 MMBtu). Confirm for your broker/CFD.
   # Gauge dashboard — NON tradato
   - symbol: "^VIX"
     name: "VIX"
@@ -116,7 +125,7 @@ holdings:
   - { symbol: "NVO",     name: "Novo Nordisk ADR", asset_class: equity,    quantity: 0, avg_price: null }
   - { symbol: "SPGI",    name: "S&P Global",       asset_class: equity,    quantity: 0, avg_price: null }
   - { symbol: "GC=F",    name: "Gold",             asset_class: commodity, quantity: 0, avg_price: null }
-  - { symbol: "SI=F",    name: "Silver",           asset_class: commodity, quantity: 0, avg_price: null }
+  - { symbol: "SI=F",    name: "Silver",           asset_class: commodity, quantity: 0, avg_price: null }  # point value 5000 if added to the trading universe (COMEX 5,000 oz)
   - { symbol: "HG=F",    name: "Copper",           asset_class: commodity, quantity: 0, avg_price: null }
   - { symbol: "BTC-USD", name: "Bitcoin",          asset_class: crypto,    quantity: 0, avg_price: null }
 
@@ -138,7 +147,26 @@ schedule:
 # --- Provider selection (swap implementations without code changes) --
 providers:
   prices: yfinance        # PriceProvider implementation
-  calendar: fmp           # CalendarProvider implementation
+  calendar: fmp           # CalendarProvider implementation (falls back to seeded)
+
+# --- Economic calendar -----------------------------------------------
+# FMP's free tier 403s on /economic_calendar (paid endpoint). When the primary
+# provider fails or returns nothing, the calendar job falls back to these SEEDED
+# recurring macro dates so "next catalyst" + the board's event-risk factor work.
+# These are reference DATES (configurable, not hardcoded in code). FOMC/ECB are
+# explicit known 2026 meeting dates (decision day); the rest are recurring rules.
+calendar:
+  seed:
+    enabled: true
+    events:
+      - { title: "FOMC decision", category: macro, importance: high, country: US, time: "18:00", rule: explicit,
+          dates: ["2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"] }
+      - { title: "ECB rate decision", category: macro, importance: high, country: EU, time: "12:15", rule: explicit,
+          dates: ["2026-07-23", "2026-09-10", "2026-10-29", "2026-12-17"] }
+      - { title: "US CPI (inflazione)", category: economic, importance: high, country: US, time: "12:30", rule: day_of_month, day: 12 }
+      - { title: "US PCE (inflazione Fed)", category: economic, importance: high, country: US, time: "12:30", rule: last_business_day }
+      - { title: "US Nonfarm Payrolls", category: economic, importance: high, country: US, time: "12:30", rule: nth_weekday, n: 1, weekday: 4 }
+      - { title: "China PMI (NBS)", category: economic, importance: medium, country: CN, time: "01:00", rule: day_of_month, day: 30 }
 
 # --- Price history / indicators --------------------------------------
 indicators:
@@ -212,31 +240,47 @@ news:
       - { name: "ECB Press", url: "https://www.ecb.europa.eu/press/rss/press.xml" }
   newsapi:
     enabled: false         # optional; requires NEWSAPI_KEY in .env
+  # Key-figure sourcing filter (M9 fix): require the figure's name in the title
+  # and bias the query to actual statements, so institution news (obituaries,
+  # stress tests, other officials) stops landing under a person's name.
+  figures_filter:
+    require_name_in_title: true
+    statement_cues: ["said", "says", "statement", "remarks", "speech", "testimony", "comments", "warns", "signals", "tells", "told", "reiterates"]
+    drop_terms: ["obituary", "dies", "died", "death", "funeral", "necrolog", "passes away", "passed away"]
 
 # --- Key figures tracker (M4) ----------------------------------------
 # People/institutions whose statements may move the universe. For each,
 # `keywords` drives the per-figure news query; `press_rss` (optional) adds
 # an official feed. Fully configurable — add/remove figures freely.
+# `match_terms` (optional): the terms that must appear in a headline for it to
+# count as THIS figure's statement (defaults to the name + surname). For an
+# institution, list the names/bodies that identify it.
 figures:
   - name: "Donald Trump"
     role: "US President"
     keywords: ["Trump", "tariffs", "White House"]
+    match_terms: ["Trump"]
   - name: "Jerome Powell"
     role: "Fed Chair"
     keywords: ["Powell", "Federal Reserve", "FOMC"]
+    match_terms: ["Powell"]
     press_rss: "https://www.federalreserve.gov/feeds/press_all.xml"
   - name: "Elon Musk"
     role: "Tesla / xAI CEO"
     keywords: ["Elon Musk", "Tesla"]
+    match_terms: ["Musk"]
   - name: "Jensen Huang"
     role: "NVIDIA CEO"
     keywords: ["Jensen Huang", "Nvidia"]
+    match_terms: ["Huang"]
   - name: "Sundar Pichai"
     role: "Alphabet CEO"
     keywords: ["Sundar Pichai", "Google", "Alphabet"]
+    match_terms: ["Pichai"]
   - name: "China policy"
     role: "PBoC / State Council"
     keywords: ["China policy", "PBoC", "Politburo", "State Council"]
+    match_terms: ["PBoC", "Politburo", "State Council", "China policy"]
 
 # --- Options / insurance desk (M5) -----------------------------------
 # Analysis only — PROPOSES hedges/structures, never sends orders.
@@ -279,6 +323,41 @@ alerts:
     universe_news: true      # news tagged to a universe instrument
     iv_spike: false          # elevated ATM IV (snapshot heuristic)
 
+# --- Research / backtesting bench ------------------------------------
+# READ-ONLY research to MEASURE if a rule has edge — NOT a signal generator.
+# Built to make overfitting VISIBLE: NET results (costs+slippage always
+# deducted), out-of-sample in primo piano, multi-strumento, e correzione per
+# test multipli (Sharpe deflazionato). Tutto configurabile.
+backtest:
+  history_days: 5475          # ~15y of daily history pulled (cached locally)
+  cache_max_age_hours: 24
+  periods_per_year: 252
+  cost_bps: 5.0               # commission + spread + slippage PER SIDE (basis points)
+  is_fraction: 0.6            # 60% in-sample, 40% out-of-sample
+  bootstrap_iter: 1000
+  bootstrap_block: 5          # moving-block bootstrap block length (serial dependence)
+  seed: 12345                 # reproducible bootstrap
+  max_trials: 200             # cap on scan trials (logged if exceeded)
+  # Tradable universe for scans (VIX gauge excluded — never traded).
+  scan_universe: ["GC=F", "^NDX", "NVDA", "TSLA", "GOOGL", "HG=F", "NG=F", "^GDAXI", "EURUSD=X"]
+  # Rule defaults (single run) + scan grids (parameter sweep -> N trials).
+  rules:
+    streak_reversion:
+      params: { down_days: 5, hold_days: 3 }
+      grid: { down_days: [3, 4, 5, 6, 7], hold_days: [1, 3, 5, 10] }
+    ma_crossover:
+      params: { fast: 50, slow: 200 }
+      grid: { fast: [20, 50], slow: [100, 200], trend_ma: [~, 200] }
+    rsi_reversion:
+      params: { period: 14, buy_below: 30, exit_above: 55 }
+      grid: { period: [7, 14], buy_below: [20, 30], exit_above: [50, 55, 70] }
+    donchian_breakout:
+      params: { n: 20 }
+      grid: { n: [10, 20, 55] }
+    bollinger_reversion:
+      params: { period: 20, k: 2.0 }
+      grid: { period: [20], k: [1.5, 2.0, 2.5] }
+
 # --- Decision board (M9) — per-instrument confluence cockpit ---------
 # NOT a signal and NEVER a prediction (CLAUDE.md §1, §5): it assembles the
 # context the user weighs (macro drivers, technicals, an HONEST historical base
@@ -296,7 +375,15 @@ decision_board:
   enabled: true
   macro:
     provider: fred
-    history_days: 365          # FRED lookback pulled per series
+    history_days: 400          # FRED lookback pulled per series (covers the regime window)
+    # Level/regime classification: a driver's STATE considers where its level
+    # sits in its own history (percentile over `lookback_days`), not just the
+    # daily move — so a high-but-falling real yield stays a structural headwind.
+    regime:
+      lookback_days: 252       # ~1Y of observations for the percentile
+      high_pct: 0.66           # level at/above this percentile = "high" regime
+      low_pct: 0.34            # level at/below this percentile = "low" regime
+      use_regime: true         # false = classify by daily direction only (legacy)
   base_rate:
     horizons: [1, 3, 5]        # trading days ahead for the historical distribution
     min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)

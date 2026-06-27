@@ -23,6 +23,11 @@ from .indicators import (
 )
 
 
+def plural_days(n: int) -> str:
+    """Italian day pluralization: 1 -> 'giorno', else 'giorni'."""
+    return "giorno" if abs(n) == 1 else "giorni"
+
+
 # --- consecutive streak ----------------------------------------------
 @dataclass(frozen=True)
 class Streak:

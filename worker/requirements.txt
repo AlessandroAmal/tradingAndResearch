@@ -11,5 +11,10 @@ yfinance>=0.2.40
 feedparser>=6.0,<7.0
 anthropic>=0.40,<1.0
 
+# Phase 4 / M9 — local control API (Aggiorna + Analisi AI buttons)
+fastapi>=0.110,<1.0
+uvicorn>=0.29,<1.0
+
 # Dev / test
 pytest>=8.0,<9.0
+httpx>=0.27,<0.29  # also FastAPI TestClient dependency

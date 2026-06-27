@@ -16,6 +16,9 @@ Usage (from worker/):
     python -m app.main alerts            # evaluate alert rules + notify (M8)
     python -m app.main macro             # fetch FRED macro series -> macro_series (M9)
     python -m app.main decision          # macro + assemble decision board snapshot (M9)
+    python -m app.main api               # serve the local control API (Aggiorna + AI buttons, M9)
+    python -m app.main backtest --rule streak_reversion --instrument GC=F   # single backtest
+    python -m app.main backtest --scan   # multi-trial scan over universe/params (data-snooping aware)
     python -m app.main run               # start the APScheduler loop (blocking)
 
 Read-only cockpit: there is intentionally NO command that places orders.
@@ -39,6 +42,7 @@ from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
 from .ingestion.tagging_job import run_tagging
 from .decision import run_decision_board
+from .backtest import run_scan, run_single
 from .logging_setup import get_logger, setup_logging
 from .notify import build_notifier
 from .providers.calendar import build_calendar_provider
@@ -68,7 +72,7 @@ def _cmd_prices(cfg, storage) -> int:
 
 
 def _cmd_calendar(cfg, storage) -> int:
-    provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"))
+    provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"), cfg)
     res = run_calendar_ingestion(cfg, storage, provider)
     return 0 if res["failed"] == 0 else 1
 
@@ -156,6 +160,69 @@ def _cmd_decision(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_backtest(cfg, storage, args) -> int:
+    provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    if args.scan:
+        rules = [r.strip() for r in args.rules.split(",")] if args.rules else None
+        instruments = [s.strip() for s in args.instruments.split(",")] if args.instruments else None
+        result = run_scan(cfg, provider, rules, instruments)
+        storage.insert_backtest_run("scan", args.rules, None, None, result)
+        d = result.get("deflated", {})
+        best = result.get("best", {})
+        log.info(
+            "SCAN: %d trials | best rule=%s params=%s OOS Sharpe(ann med)=%.2f | "
+            "deflated Sharpe=%.3f (n_trials=%d) — best-of-N looks good by chance unless DSR is high",
+            result.get("n_trials", 0), best.get("rule"), best.get("params"),
+            best.get("oos_sharpe_ann_median", float("nan")),
+            (d.get("deflated_sharpe") or float("nan")), d.get("n_trials", 0),
+        )
+        return 0
+
+    rule = args.rule or "streak_reversion"
+    instrument = args.instrument or "GC=F"
+    result = run_single(cfg, provider, rule, instrument, _parse_params(args.params))
+    storage.insert_backtest_run("single", rule, instrument, result.get("params"), result)
+    oos = result["metrics"]["out_of_sample"]
+    deg = result["degradation"]["sharpe"]
+    log.info(
+        "BACKTEST %s on %s | NET OOS: total=%.1f%% Sharpe=%.2f vs B&H total=%.1f%% | "
+        "IS->OOS Sharpe %.2f->%.2f | bootstrap p(not>luck)=%.2f p(not>B&H)=%.2f",
+        rule, instrument,
+        oos["net"]["total_return"] * 100, oos["net"]["sharpe"],
+        oos["bh_net"]["total_return"] * 100,
+        deg.get("in_sample") or float("nan"), deg.get("out_of_sample") or float("nan"),
+        result["bootstrap"]["p_not_better_than_luck"],
+        result["bootstrap"]["p_not_better_than_bh"],
+    )
+    return 0
+
+
+def _parse_params(raw: str | None) -> dict | None:
+    """Parse `--params k=v,k2=v2` into a dict (ints/floats coerced)."""
+    if not raw:
+        return None
+    out: dict = {}
+    for pair in raw.split(","):
+        if "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        v = v.strip()
+        try:
+            out[k.strip()] = int(v)
+        except ValueError:
+            try:
+                out[k.strip()] = float(v)
+            except ValueError:
+                out[k.strip()] = v
+    return out or None
+
+
+def _cmd_api(cfg, storage) -> int:
+    # Lazy import so the FastAPI/uvicorn deps are only needed for this command.
+    from .api import run as run_api
+    return run_api()
+
+
 def _cmd_run(cfg, storage) -> int:
     seed_universe_and_holdings(cfg, storage)
     sched = build_scheduler(cfg, storage)
@@ -183,6 +250,7 @@ COMMANDS = {
     "alerts": _cmd_alerts,
     "macro": _cmd_macro,
     "decision": _cmd_decision,
+    "api": _cmd_api,
     "run": _cmd_run,
 }
 
@@ -190,7 +258,15 @@ COMMANDS = {
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(description="Trading & Research Command Center worker")
-    parser.add_argument("command", choices=sorted(COMMANDS), help="action to run")
+    parser.add_argument("command", choices=sorted(list(COMMANDS) + ["backtest"]),
+                        help="action to run")
+    # Backtest options (used only by the `backtest` command).
+    parser.add_argument("--rule", help="backtest rule name (single run)")
+    parser.add_argument("--instrument", help="backtest instrument symbol (single run)")
+    parser.add_argument("--params", help="rule params, e.g. down_days=5,hold_days=3")
+    parser.add_argument("--scan", action="store_true", help="scan universe/params (data-snooping aware)")
+    parser.add_argument("--rules", help="comma-separated rules to scan (default: all in config)")
+    parser.add_argument("--instruments", help="comma-separated instruments to scan (default: config universe)")
     args = parser.parse_args(argv)
 
     cfg = load_config()
@@ -199,6 +275,8 @@ def main(argv: list[str] | None = None) -> int:
         len(cfg.universe), cfg.account_size, cfg.base_currency,
     )
     storage = build_storage()
+    if args.command == "backtest":
+        return _cmd_backtest(cfg, storage, args)
     return COMMANDS[args.command](cfg, storage)
 
 

@@ -208,6 +208,27 @@ export async function fetchDecisionBoard(symbol) {
     .maybeSingle()
 }
 
+// --- Research / Backtest bench ---
+// Recent runs (list); the heavy `result` JSON is fetched per-run on demand.
+export async function fetchBacktestRuns(limit = 30) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('backtest_runs')
+    .select('id, kind, rule, instrument, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+}
+
+export async function fetchBacktestRun(id) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('backtest_runs')
+    .select('id, kind, rule, instrument, params, result, created_at')
+    .eq('id', id)
+    .limit(1)
+    .maybeSingle()
+}
+
 // Recent key-figure statements with their AI impact mapping.
 export async function fetchKeyFigures(limit = 15) {
   if (!isConfigured) return NOT_CONFIGURED

@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from ..technicals import plural_days
+
 BULLISH, BEARISH, NEUTRAL = "bullish", "bearish", "neutral"
 
 # Context factors never contribute to the directional lean, regardless of any
@@ -59,6 +61,72 @@ def _score_of(classification: str) -> int:
     return {BULLISH: 1, BEARISH: -1}.get(classification, 0)
 
 
+# --- macro state: LEVEL/REGIME + daily direction ---------------------
+# A driver is classified by where its level sits in its own history (regime),
+# not only by today's move. e.g. a real yield that is high-but-falling is still
+# a structural headwind for gold, not simply "favorable" because it ticked down.
+def _to_wind(classification: str) -> str:
+    return {BULLISH: "tailwind", BEARISH: "headwind"}.get(classification, "neutral")
+
+
+def regime_label(percentile: float | None, high_pct: float, low_pct: float) -> str:
+    if percentile is None:
+        return "n/d"
+    if percentile >= high_pct:
+        return "high"
+    if percentile <= low_pct:
+        return "low"
+    return "mid"
+
+
+def _regime_class(supportive_when: str | None, percentile: float | None,
+                  high_pct: float, low_pct: float) -> str:
+    if percentile is None or not supportive_when:
+        return NEUTRAL
+    lab = regime_label(percentile, high_pct, low_pct)
+    if lab == "mid":
+        return NEUTRAL
+    low_is_good = supportive_when == "falling"  # low level supports the instrument
+    if lab == "low":
+        return BULLISH if low_is_good else BEARISH
+    return BEARISH if low_is_good else BULLISH   # high level
+
+
+def _move_class(direction: str | None, supportive_when: str | None) -> str:
+    if not supportive_when or direction == "flat" or not direction:
+        return NEUTRAL
+    good = "up" if supportive_when == "rising" else "down"
+    return BULLISH if direction == good else BEARISH
+
+
+def classify_macro_state(
+    supportive_when: str | None,
+    direction: str | None,
+    percentile: float | None,
+    *,
+    high_pct: float = 0.66,
+    low_pct: float = 0.34,
+    use_regime: bool = True,
+) -> dict:
+    """Combine level/regime and daily direction into a state for the instrument.
+
+    When `use_regime` and the level is at an extreme, the REGIME drives the state
+    (structural); otherwise the daily move does. Returns both so the UI can show
+    level AND movement. `state` is the tailwind/headwind/neutral display label;
+    `classification` is the bullish/bearish/neutral used by the lean.
+    """
+    move = _move_class(direction, supportive_when)
+    regime_cls = _regime_class(supportive_when, percentile, high_pct, low_pct)
+    cls = regime_cls if (use_regime and regime_cls != NEUTRAL) else move
+    return {
+        "state": _to_wind(cls),
+        "classification": cls,
+        "regime": regime_label(percentile, high_pct, low_pct),
+        "regime_class": regime_cls,
+        "move_class": move,
+    }
+
+
 # --- per-factor classifiers ------------------------------------------
 def _macro_factor(driver: Mapping) -> dict:
     """Reuse the driver's context state: tailwind = bullish, headwind = bearish.
@@ -69,11 +137,16 @@ def _macro_factor(driver: Mapping) -> dict:
     weight = float(driver.get("weight", 1.0))
     if driver.get("value") is None:
         return _excluded(key, label, weight, "dato macro mancante")
-    state = driver.get("state")
-    cls = {"tailwind": BULLISH, "headwind": BEARISH}.get(state, NEUTRAL)
+    # Prefer the regime-aware classification computed at board time; fall back to
+    # deriving it from the display state for older snapshots.
+    cls = driver.get("classification")
+    if cls not in (BULLISH, BEARISH, NEUTRAL):
+        cls = {"tailwind": BULLISH, "headwind": BEARISH}.get(driver.get("state"), NEUTRAL)
     arrow = {"up": "↑", "down": "↓", "flat": "→"}.get(driver.get("direction"), "→")
+    regime = driver.get("regime")
+    regime_txt = f" · livello {regime}" if regime and regime != "n/d" else ""
     return _factor(key, label, cls, weight, kind="directional",
-                   detail=f"{arrow} {driver.get('interpretation') or ''}".strip())
+                   detail=f"{arrow}{regime_txt} {driver.get('interpretation') or ''}".strip())
 
 
 def _trend_factor(technicals: Mapping, weight: float) -> dict:
@@ -116,7 +189,7 @@ def _rsi_factor(technicals: Mapping, weight: float) -> dict:
 def _streak_factor(technicals: Mapping) -> dict:
     sk = technicals.get("streak", {})
     n, d = sk.get("length", 0), sk.get("direction")
-    detail = (f"{n} giorni {'su' if d == 'up' else 'giù'} (momentum, non direzione futura)"
+    detail = (f"{n} {plural_days(n)} {'su' if d == 'up' else 'giù'} (momentum, non direzione futura)"
               if n else "nessuno streak in corso")
     return _factor("streak", "Streak / momentum", NEUTRAL, 0.0, kind="context", detail=detail)
 

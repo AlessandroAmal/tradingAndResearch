@@ -25,5 +25,5 @@ def build_figure_source(cfg: "AppConfig") -> FigureSource:
     """
     src = (cfg.news or {}).get("figures_source", "news")
     if src == "news":
-        return NewsFigureSource()
+        return NewsFigureSource(filter_cfg=(cfg.news or {}).get("figures_filter", {}))
     raise ValueError(f"Unknown figure source: {src!r}")

@@ -30,7 +30,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 
-from .technicals import consecutive_streak
+from .technicals import consecutive_streak, plural_days
 
 # Fixed honesty caveat surfaced alongside every streak base rate.
 STREAK_CAVEAT = (
@@ -131,7 +131,7 @@ def streak_base_rate(
             direction=D, length=L, sample_size=0, min_sample=min_sample,
             status="never", in_progress=in_progress, lookback_bars=n_bars,
             message=(
-                f"Streak di {L} giorni {_it_dir(D)} mai osservato in precedenza nel "
+                f"Streak di {L} {plural_days(L)} {_it_dir(D)} mai osservato in precedenza nel "
                 f"periodo ({n_bars} barre): nessuna base statistica. NON una probabilità."
             ),
         )
@@ -159,12 +159,12 @@ def streak_base_rate(
         status = "insufficient"
         message = (
             f"Campione insufficiente (n={n} < {min_sample}): nessuna conclusione. "
-            f"Streak di {L} giorni {_it_dir(D)}."
+            f"Streak di {L} {plural_days(L)} {_it_dir(D)}."
         )
     else:
         status = "ok"
         message = (
-            f"Streak di {L} giorni {_it_dir(D)}: {n} casi storici simili nel periodo. "
+            f"Streak di {L} {plural_days(L)} {_it_dir(D)}: {n} casi storici simili nel periodo. "
             f"Sotto, cosa è successo dopo (frequenza, non previsione)."
         )
 

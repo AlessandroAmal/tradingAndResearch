@@ -7,11 +7,12 @@ import {
   fetchRiskSettings,
 } from './api/data'
 import { isConfigured } from './lib/supabase'
+import { refresh as apiRefresh, apiConfigured } from './api/control'
 import { dailyChange } from './lib/indicators'
 import Watchlist from './components/Watchlist'
 import InstrumentDetail from './components/InstrumentDetail'
 import Catalysts from './components/Catalysts'
-import PositionForm from './components/PositionForm'
+import TradeGate from './components/TradeGate'
 import PositionsTable from './components/PositionsTable'
 import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
@@ -22,6 +23,7 @@ import Journal from './pages/Journal'
 import OptionsDesk from './pages/OptionsDesk'
 import Alerts from './pages/Alerts'
 import DecisionBoard from './pages/DecisionBoard'
+import Backtest from './pages/Backtest'
 
 const REFRESH_MS = 60_000
 
@@ -33,6 +35,8 @@ export default function App() {
   const [riskSettings, setRiskSettings] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshErr, setRefreshErr] = useState(null)
   const [errors, setErrors] = useState({})
   const [nowMs, setNowMs] = useState(Date.now())
   // Information architecture: primary groups + a trading sub-tab (state only).
@@ -85,6 +89,20 @@ export default function App() {
     setErrors(nextErrors)
     setLoading(false)
   }, [selectedId])
+
+  // "Aggiorna": if the local control API is configured, run the FREE refresh
+  // (prices + macro + calendar + board rebuild, NO AI) then re-read Supabase.
+  // Without the API it just re-reads what the worker last wrote.
+  const handleRefresh = useCallback(async () => {
+    setRefreshErr(null)
+    if (apiConfigured) {
+      setRefreshing(true)
+      const { error } = await apiRefresh()
+      setRefreshing(false)
+      if (error) setRefreshErr(error.message)
+    }
+    await loadAll()
+  }, [loadAll])
 
   useEffect(() => {
     loadAll()
@@ -147,8 +165,8 @@ export default function App() {
             {navItem('guida', 'Guida')}
           </nav>
           {primary !== 'guida' && (
-            <button className="primary" onClick={loadAll} disabled={loading}>
-              {loading ? 'Aggiorno…' : 'Aggiorna'}
+            <button className="primary" onClick={handleRefresh} disabled={loading || refreshing}>
+              {refreshing ? 'Aggiornamento in corso…' : loading ? 'Aggiorno…' : 'Aggiorna'}
             </button>
           )}
         </div>
@@ -160,6 +178,16 @@ export default function App() {
           <code>.env</code> e imposta <code>VITE_SUPABASE_URL</code> /{' '}
           <code>VITE_SUPABASE_ANON_KEY</code>.
         </div>
+      )}
+
+      {primary !== 'guida' && refreshing && (
+        <div className="banner">
+          Aggiornamento dati in corso (prezzi · macro · calendario · decision board) — può
+          richiedere qualche minuto…
+        </div>
+      )}
+      {primary !== 'guida' && refreshErr && (
+        <div className="banner error">Aggiornamento non riuscito — {refreshErr}</div>
       )}
 
       {primary === 'guida' && <Guide />}
@@ -200,6 +228,7 @@ export default function App() {
           <nav className="nav subnav" aria-label="Sezione trading">
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
             {tradingTabBtn('decision', 'Decision board')}
+            {tradingTabBtn('backtest', 'Ricerca')}
             {tradingTabBtn('journal', 'Journal')}
             {tradingTabBtn('options', 'Options')}
             {tradingTabBtn('alerts', 'Alert')}
@@ -209,7 +238,15 @@ export default function App() {
             <main className="grid grid-trading">
               <div className="col-left">
                 <SizingCalculator instruments={instruments} settings={riskSettings} />
-                <PositionForm instruments={instruments} onSaved={loadAll} />
+                <TradeGate
+                  instruments={instruments}
+                  settings={riskSettings}
+                  positions={positions}
+                  priceBySymbol={priceBySymbol}
+                  multiplierBySymbol={multiplierBySymbol}
+                  events={events}
+                  onSaved={loadAll}
+                />
               </div>
               <div className="col-main">
                 <section className="panel">
@@ -238,6 +275,8 @@ export default function App() {
           )}
 
           {tradingTab === 'decision' && <DecisionBoard />}
+
+          {tradingTab === 'backtest' && <Backtest />}
 
           {tradingTab === 'journal' && (
             <Journal instruments={instruments} positions={positions} />

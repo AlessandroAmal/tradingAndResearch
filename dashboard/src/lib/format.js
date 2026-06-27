@@ -11,6 +11,25 @@ export function fmtNum(v, digits = 2) {
   return Number(v).toFixed(digits)
 }
 
+// Italian singular/plural picker: pluralize(1,'giorno','giorni') -> 'giorno'.
+export function pluralize(n, sing, plur) {
+  return Math.abs(n) === 1 ? sing : plur
+}
+
+// "N min/ore/giorni fa" since a past ISO timestamp — makes staleness obvious.
+export function relativeTime(iso, nowMs = Date.now()) {
+  const diff = nowMs - new Date(iso).getTime()
+  if (Number.isNaN(diff)) return '—'
+  if (diff < 0) return 'ora'
+  const m = Math.floor(diff / 60000)
+  const h = Math.floor(m / 60)
+  const d = Math.floor(h / 24)
+  if (d > 0) return `${d} ${pluralize(d, 'giorno', 'giorni')} fa`
+  if (h > 0) return `${h} ${pluralize(h, 'ora', 'ore')} fa`
+  if (m > 0) return `${m} min fa`
+  return 'pochi secondi fa'
+}
+
 // Countdown like "2d 4h" / "3h 12m" / "8m" until a future ISO timestamp.
 export function countdown(toIso, nowMs = Date.now()) {
   const diff = new Date(toIso).getTime() - nowMs

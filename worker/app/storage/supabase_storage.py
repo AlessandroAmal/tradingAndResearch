@@ -347,6 +347,27 @@ class SupabaseStorage:
         self._client.table("decision_boards").upsert(row, on_conflict="symbol").execute()
         log.info("Decision board snapshot upserted for %s", symbol)
 
+    def get_decision_board(self, symbol: str) -> dict[str, Any] | None:
+        res = (
+            self._client.table("decision_boards")
+            .select("board")
+            .eq("symbol", symbol)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        return rows[0].get("board") if rows else None
+
+    # --- backtest bench -------------------------------------------
+    def insert_backtest_run(self, kind, rule, instrument, params, result) -> dict[str, Any]:
+        row = {
+            "kind": kind, "rule": rule, "instrument": instrument,
+            "params": params, "result": result,
+        }
+        res = self._client.table("backtest_runs").insert(row).execute()
+        log.info("Backtest run stored (%s, rule=%s, instrument=%s)", kind, rule, instrument)
+        return res.data[0] if res.data else {}
+
     def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
         from datetime import datetime, timezone
 

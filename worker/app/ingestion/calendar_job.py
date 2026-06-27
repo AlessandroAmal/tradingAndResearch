@@ -21,20 +21,37 @@ def run_calendar_ingestion(
     cfg: AppConfig,
     storage: Storage,
     provider: CalendarProvider,
-    horizon_days: int = 30,
+    horizon_days: int = 120,
 ) -> dict[str, int]:
     today = date.today()
     to = today + timedelta(days=horizon_days)
     from_s, to_s = today.isoformat(), to.isoformat()
 
+    events = []
     try:
         events = with_retry(
             lambda: provider.fetch_events(from_s, to_s),
             label=f"fetch_events({from_s}..{to_s})",
         )
     except Exception as exc:  # noqa: BLE001
-        log.error("Calendar ingestion failed (%s..%s): %s", from_s, to_s, exc)
-        return {"ok": 0, "failed": 1}
+        log.warning("Primary calendar provider failed (%s..%s): %s", from_s, to_s, exc)
+
+    # Fallback: if the primary provider failed or returned nothing (e.g. FMP free
+    # tier 403s on /economic_calendar), seed the known recurring macro dates so
+    # the dashboard and the board's event-risk factor are not blind.
+    if not events:
+        seed_cfg = dict(cfg.raw.get("calendar", {}).get("seed", {}))
+        if seed_cfg.get("enabled", True):
+            from ..providers.calendar.seeded_provider import SeededCalendarProvider
+            log.info("Calendar falling back to seeded recurring events.")
+            try:
+                events = SeededCalendarProvider(seed_cfg).fetch_events(from_s, to_s)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Seeded calendar fallback failed: %s", exc)
+                return {"ok": 0, "failed": 1}
+        else:
+            log.error("Calendar empty and seed disabled — no events ingested.")
+            return {"ok": 0, "failed": 1}
 
     rows = [
         {

@@ -26,7 +26,7 @@ from ..providers.options import OptionsProvider
 from ..storage import Storage
 from .. import technicals as tech
 from .implied import implied_probabilities
-from .synthesis import confluence_read
+from .synthesis import classify_macro_state, confluence_read
 
 log = get_logger("decision.board")
 
@@ -42,41 +42,53 @@ def _direction(latest: float | None, prev: float | None) -> str:
     return "flat"
 
 
-def _driver_state(direction: str, supportive_when: str | None) -> str:
-    """Map a driver's move to a context colour (NOT a buy/sell signal).
+def _percentile(values: list[float], latest: float) -> float | None:
+    """Fraction of the window at or below `latest` (0..1). The level's regime."""
+    if not values:
+        return None
+    le = sum(1 for v in values if v <= latest)
+    return le / len(values)
 
-    'tailwind' = the move is historically supportive for this instrument,
-    'headwind' = the opposite, 'neutral' = flat/unknown. Purely descriptive.
+
+def _resolve_macro_driver(storage: Storage, drv: dict, days: int, regime: dict) -> dict:
+    """Resolve a driver to its latest value, daily direction AND level/regime.
+
+    The level/regime (percentile over `lookback_days`) lets the synthesis treat
+    e.g. a high-but-falling real yield as a structural headwind, not "favorable".
     """
-    if not supportive_when or direction == "flat":
-        return "neutral"
-    good = "up" if supportive_when == "rising" else "down"
-    return "tailwind" if direction == good else "headwind"
-
-
-def _resolve_macro_driver(storage: Storage, drv: dict, days: int) -> dict:
     sid = drv.get("id")
     source = (drv.get("source") or "fred").lower()
+    lookback = int(regime.get("lookback_days", 252))
+    values: list[float] = []
     latest = prev = None
     as_of = None
+
     if source == "price":
         iid = storage.get_instrument_id(sid)
-        rows = storage.get_price_history(iid, 2) if iid else []
-        closes = [r.get("close") for r in rows if r.get("close") is not None]
-        if closes:
-            latest = float(closes[0])
+        rows = storage.get_price_history(iid, max(lookback, 2)) if iid else []
+        values = [float(r["close"]) for r in rows if r.get("close") is not None]
+        if rows:
             as_of = rows[0].get("ts")
-        if len(closes) > 1:
-            prev = float(closes[1])
     else:  # fred (default)
-        rows = storage.get_macro_series(sid, days)  # newest-first
-        vals = [(r.get("value"), r.get("obs_date")) for r in rows if r.get("value") is not None]
-        if vals:
-            latest, as_of = float(vals[0][0]), vals[0][1]
-        if len(vals) > 1:
-            prev = float(vals[1][0])
+        rows = storage.get_macro_series(sid, max(lookback, days))  # newest-first
+        clean = [r for r in rows if r.get("value") is not None]
+        values = [float(r["value"]) for r in clean]
+        if clean:
+            as_of = clean[0].get("obs_date")
+    if values:
+        latest = values[0]
+    if len(values) > 1:
+        prev = values[1]
+
     direction = _direction(latest, prev)
     change = (latest - prev) if (latest is not None and prev is not None) else None
+    pctile = _percentile(values, latest) if latest is not None else None
+    cls = classify_macro_state(
+        drv.get("supportive_when"), direction, pctile,
+        high_pct=float(regime.get("high_pct", 0.66)),
+        low_pct=float(regime.get("low_pct", 0.34)),
+        use_regime=bool(regime.get("use_regime", True)),
+    )
     return {
         "id": sid,
         "label": drv.get("label", sid),
@@ -85,7 +97,12 @@ def _resolve_macro_driver(storage: Storage, drv: dict, days: int) -> dict:
         "prev": prev,
         "change": change,
         "direction": direction,
-        "state": _driver_state(direction, drv.get("supportive_when")),
+        "level_percentile": pctile,
+        "regime": cls["regime"],
+        "regime_class": cls["regime_class"],
+        "move_class": cls["move_class"],
+        "classification": cls["classification"],
+        "state": cls["state"],
         "supportive_when": drv.get("supportive_when"),
         "interpretation": drv.get("interpretation"),
         "as_of": str(as_of) if as_of is not None else None,
@@ -197,6 +214,7 @@ def run_decision_board(
 
     macro_cfg = dict(db_cfg.get("macro", {}) or {})
     macro_days = int(macro_cfg.get("history_days", 365))
+    regime_cfg = dict(macro_cfg.get("regime", {}) or {})
     br_cfg = dict(db_cfg.get("base_rate", {}) or {})
     horizons = list(br_cfg.get("horizons", [1, 3, 5]))
     min_sample = int(br_cfg.get("min_sample", 20))
@@ -237,7 +255,7 @@ def run_decision_board(
             )
 
             drivers = [
-                _resolve_macro_driver(storage, drv, macro_days)
+                _resolve_macro_driver(storage, drv, macro_days, regime_cfg)
                 for drv in inst.get("macro_drivers", [])
             ]
 

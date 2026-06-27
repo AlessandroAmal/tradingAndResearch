@@ -413,16 +413,95 @@ set `FRED_API_KEY` in the worker `.env` ([free key](https://fredaccount.stlouisf
 - **Schema (no drift):** two additive tables in `0011`; `macro_series` is distinct
   from `gas_fundamentals`; no column renames anywhere.
 
-### Try it
+### M9 improvements (this round)
+- **Implied prob at YOUR level:** the Probabilità implicite section takes a price
+  `K` and shows risk-neutral P(above/below) `K` at ~1d/3d/30d from the stored ATM
+  IV — the useful directional number (not just the ~50/50 ATM). Still "market odds".
+- **Macro level/regime:** a driver's state weighs WHERE its level sits in its own
+  history (percentile over a configurable lookback), not only today's move — so a
+  high-but-falling real yield reads as a structural headwind, not "favorable".
+- **Calendar fallback:** FMP free 403s on `/economic_calendar`, so the job falls
+  back to **seeded recurring dates** (FOMC/ECB/CPI/PCE/NFP/China PMI) from config —
+  `events` is populated and the board's event-risk factor isn't blind.
+- **Key-figure filter:** statements now require the figure's name in the title +
+  statement cues, dropping institution/obituary noise.
+
+### Control API — two buttons (`python -m app.main api`)
+The dashboard reads Supabase but can't run the worker, so a small **FastAPI** app
+(`worker/app/api.py`) exposes two actions, CORS-scoped to the dashboard and gated by
+a shared token (header `X-API-Token` == worker `API_TOKEN`):
+- **POST `/refresh`** — *free*: runs the non-AI jobs (prices, macro/FRED, calendar)
+  and rebuilds the board(s) **without any AI call**. The dashboard's **Aggiorna**
+  button calls this. Concurrency-guarded (409 if already running).
+- **POST `/decision/{instrument}/ai`** — *paid*: runs **only** the AI synthesis on
+  the current snapshot (optionally at your level), saves & returns it. The
+  **Genera analisi AI** button calls this. Guarded against concurrent/rapid runs
+  (409/429). Output is honest: scenarios + qualitative conviction, cites only the
+  **real** probabilities (implied/base-rate), **no directional %**, no recommendation.
+
+### Try it (locally, end to end)
 ```bash
-# apply 0011 and set FRED_API_KEY, then (worker venv active):
-python -m app.main prices     # ensure gold + ^VIX history exists
-python -m app.main macro      # pull FRED series -> macro_series
-python -m app.main decision   # assemble + save the gold board snapshot
-# then open the dashboard: Trading -> Decision board
+# 0) apply 0011, set FRED_API_KEY + API_TOKEN in worker .env; set the SAME
+#    VITE_API_TOKEN (+ VITE_API_URL) in dashboard/.env
+# 1) seed a snapshot once (worker venv active):
+python -m app.main prices && python -m app.main macro && python -m app.main decision
+# 2) start the control API (new terminal, venv active):
+python -m app.main api            # serves http://127.0.0.1:8787  (or: uvicorn app.api:app)
+# 3) dashboard: npm run dev  ->  Trading -> Decision board
+#    - press "Aggiorna" (top): snapshot recomputes, the "calcolato … fa" timestamp changes
+#    - type a level in "il tuo livello": see P(above/below) per horizon
+#    - press "Genera analisi AI": the paid synthesis appears
 ```
 
 ---
+
+## Phase 4 — Research / Backtest bench
+
+A READ-ONLY bench to **measure** whether a technical rule has edge — **not** a
+signal generator. Built to make overfitting **visible**. **Apply migration
+`0012_backtest.sql`.**
+
+- **No look-ahead, costs always deducted** (`worker/app/backtest/engine.py`):
+  `signal[t]` is decided at close t and executed at **open t+1**; gross & net are
+  computed, NET is emphasised; buy-and-hold NET is the constant benchmark.
+- **Rule library** (`rules.py`): MA crossover (+trend filter), RSI mean-reversion,
+  Donchian breakout, **streak-reversion** ("buy after N down days, hold M"),
+  Bollinger reversion — all parametrized, any instrument.
+- **Metrics** (`metrics.py`): total/CAGR/Sharpe/Sortino/MaxDD/win-rate/expectancy/
+  trades/time-in-market, gross & net + Δ vs buy-and-hold.
+- **Anti-illusion safeguards** (`safeguards.py`, the heart): in-sample→**out-of-
+  sample** split with the **degradation** front-and-centre; **deflated Sharpe**
+  (Bailey & López de Prado) that corrects the best-of-N for the number of trials;
+  **bootstrap** CIs vs luck and vs buy-and-hold; multi-instrument **consistency**;
+  fixed honesty caveats.
+- **CLI**: `python -m app.main backtest --rule streak_reversion --instrument GC=F`
+  and `python -m app.main backtest --scan`. Results saved to `backtest_runs` (JSON).
+- **Dashboard "Ricerca"** (Trading): equity strategy vs B&H (net), IS-vs-OOS, net
+  metrics; for scans the **distribution of all trials** + n_trials + deflated Sharpe.
+
+### Try it
+```bash
+# apply 0012, then (worker venv active):
+python -m app.main backtest --rule streak_reversion --instrument GC=F --params down_days=5,hold_days=3
+python -m app.main backtest --scan          # whole universe × param grid (data-snooping aware)
+# dashboard: Trading -> Ricerca  (NET out-of-sample vs buy-and-hold, deflated Sharpe)
+```
+
+## Phase 4 — Real point values + pre-trade gate
+
+- **Point values** (`config.yaml` `contract_multiplier`): futures/CFD carry their real
+  point value so risk/P&L/heat/sizing are correct — GC=F=100, SI=F=5000, HG=F=25000,
+  NG=F=10000, ^NDX=20, ^GDAXI=25 (stocks/crypto=1; confirm for your broker). Re-seed
+  (`python -m app.main seed`) to push them into `instruments`/`risk_settings`.
+- **Pre-trade gate** (`worker/app/gate.py`, pure + tested; mirror in `lib/gate.js`):
+  the **"Nuovo trade — checklist"** (Trading → Posizioni & Rischio) validates a
+  prospective trade against YOUR configured rules and raises **non-blocking warnings**
+  — risk-per-trade, resulting heat, concurrent positions, R:R below `rr_min`, an
+  **imminent high-impact event** (from the calendar, within `event_warn_hours`), and a
+  **contrarian** note vs the decision-board lean. On confirm it records the position
+  **and** a linked **journal draft**. **No order, ever.** Caveat: *it validates
+  discipline and risk, not direction.* **Apply migration `0014_gate_settings.sql`**
+  (adds `rr_min` / `event_warn_hours` to `risk_settings`).
 
 ## Hard rules (see CLAUDE.md)
 

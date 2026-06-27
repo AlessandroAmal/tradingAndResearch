@@ -162,6 +162,19 @@ class Storage(Protocol):
         """Upsert the single latest decision-board snapshot for an instrument."""
         ...
 
+    def get_decision_board(self, symbol: str) -> dict[str, Any] | None:
+        """Return the latest stored decision-board snapshot (the board JSON) for
+        an instrument, or None — used by the AI-synthesis endpoint."""
+        ...
+
+    # --- backtest bench (Phase 4) ---------------------------------
+    def insert_backtest_run(
+        self, kind: str, rule: str | None, instrument: str | None,
+        params: dict[str, Any] | None, result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist a backtest result (single or scan) and return the row."""
+        ...
+
     def list_upcoming_events(self, limit: int) -> list[dict[str, Any]]:
         """Return upcoming calendar events (event_time >= now)."""
         ...

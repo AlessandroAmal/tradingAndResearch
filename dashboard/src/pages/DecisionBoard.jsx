@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchDecisionBoards, fetchDecisionBoard } from '../api/data'
-import { fmtNum, fmtPct, countdown } from '../lib/format'
+import { generateAi, apiConfigured } from '../api/control'
+import { probAbove } from '../lib/options'
+import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
 import InfoTip from '../components/InfoTip'
 import { DECISION_HELP_BY_KEY as DH } from '../data/guide'
 
@@ -14,6 +16,8 @@ export default function DecisionBoard() {
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
   const [nowMs, setNowMs] = useState(Date.now())
+  const [level, setLevel] = useState('')              // user price level (shared)
+  const [ai, setAi] = useState({ loading: false, error: null })
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30_000)
@@ -29,7 +33,7 @@ export default function DecisionBoard() {
     })
   }, [])
 
-  useEffect(() => {
+  const loadBoard = useCallback(() => {
     if (!symbol) return
     fetchDecisionBoard(symbol).then(({ data, error }) => {
       if (error) { setError(error.message); return }
@@ -37,6 +41,17 @@ export default function DecisionBoard() {
       setBoard(data?.board || null)
     })
   }, [symbol])
+
+  useEffect(() => { loadBoard() }, [loadBoard])
+
+  const runAi = useCallback(async () => {
+    setAi({ loading: true, error: null })
+    const lvl = level !== '' && !Number.isNaN(Number(level)) ? Number(level) : null
+    const { error } = await generateAi(symbol, lvl)
+    if (error) { setAi({ loading: false, error: error.message }); return }
+    setAi({ loading: false, error: null })
+    loadBoard()  // re-read so the saved AI summary shows
+  }, [symbol, level, loadBoard])
 
   return (
     <div className="desk">
@@ -49,7 +64,8 @@ export default function DecisionBoard() {
         {error && <p className="error">Decision board non disponibile — {error}</p>}
         {symbols.length === 0 && !error && (
           <p className="muted small">
-            Nessuno snapshot. Esegui <code>python -m app.main decision</code> (serve FRED_API_KEY).
+            Nessuno snapshot. Esegui <code>python -m app.main decision</code> (serve FRED_API_KEY),
+            oppure premi <strong>Aggiorna</strong> in alto (richiede l’API locale).
           </p>
         )}
 
@@ -62,7 +78,10 @@ export default function DecisionBoard() {
             </label>
             {board?.last != null && <span className="chip">ultimo {fmtNum(board.last, 2)}</span>}
             {meta?.snapshot_at && (
-              <span className="muted small">snapshot {new Date(meta.snapshot_at).toLocaleString()}</span>
+              <span className="muted small">
+                calcolato {relativeTime(meta.snapshot_at, nowMs)}
+                {' '}· {new Date(meta.snapshot_at).toLocaleString()}
+              </span>
             )}
           </div>
         )}
@@ -73,8 +92,8 @@ export default function DecisionBoard() {
           <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
           <ConfluenceBoard rows={board.confluence || []} nowMs={nowMs} />
           <BaseRatePanel br={board.base_rate} />
-          <ImpliedPanel implied={board.implied} nowMs={nowMs} />
-          {board.ai_summary && <AISummary s={board.ai_summary} />}
+          <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
+          <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
           <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
         </>
       )}
@@ -206,7 +225,7 @@ function BaseRatePanel({ br }) {
       {(status === 'ok' || status === 'insufficient' || status === 'never') && (
         <div className="br-head">
           <span className="chip">
-            Streak: {br.length} giorni {dir}{br.in_progress ? ' (in corso)' : ''}
+            Streak: {br.length} {pluralize(br.length, 'giorno', 'giorni')} {dir}{br.in_progress ? ' (in corso)' : ''}
           </span>
           <span className={`chip ${status === 'ok' ? '' : 'warnish'}`}>
             n = {br.sample_size}
@@ -259,10 +278,27 @@ function BaseRatePanel({ br }) {
   )
 }
 
-// c. Implied probabilities — the market's odds at several horizons.
-function ImpliedPanel({ implied, nowMs }) {
+// c. Implied probabilities — the market's odds at several horizons, optionally
+// at a USER-CHOSEN level K (the useful directional number, not just the ~50/50 ATM).
+function ImpliedPanel({ implied, level, onLevelChange }) {
   if (!implied) return null
   const horizons = implied.horizons || []
+  const spot = implied.spot
+  const r = implied.risk_free_rate ?? 0.04
+  const K = level !== '' && !Number.isNaN(Number(level)) ? Number(level) : null
+
+  // Recompute P(above/below K) per horizon from the stored ATM IV (same
+  // risk-neutral math as the worker). Falls back to the ATM row when no level.
+  const probsFor = (h) => {
+    if (!h.available) return { above: null, below: null, ref: null }
+    if (K != null && spot && h.atm_iv) {
+      const T = (h.days_to_expiry || 0) / 365
+      const above = probAbove(spot, K, T, r, h.atm_iv)
+      return { above, below: above == null ? null : 1 - above, ref: K }
+    }
+    return { above: h.prob_up, below: h.prob_down, ref: implied.level }
+  }
+
   return (
     <section className="panel">
       <header className="panel-head">
@@ -277,31 +313,50 @@ function ImpliedPanel({ implied, nowMs }) {
 
       {horizons.length > 0 && (
         <>
+          <div className="desk-controls">
+            <label>Il tuo livello (prezzo)
+              <input
+                type="number" step="any" inputMode="decimal"
+                placeholder={spot != null ? `es. ${fmtNum(spot, 0)}` : 'prezzo'}
+                value={level}
+                onChange={(e) => onLevelChange(e.target.value)}
+              />
+            </label>
+            {K != null
+              ? <span className="chip">prob. sopra/sotto {fmtNum(K, 2)}</span>
+              : <span className="muted small">vuoto = ATM (≈ prezzo corrente {fmtNum(implied.level, 2)})</span>}
+            {K != null && <button className="ghost small" onClick={() => onLevelChange('')}>azzera</button>}
+          </div>
+
           <div className="risk-table-wrap">
             <table className="risk-table">
               <thead><tr>
                 <th>Orizzonte</th>
                 <th>Scadenza</th>
                 <th><span className="field-label">Movimento atteso ±<InfoTip text={DH.expected_move.text} label={DH.expected_move.label} /></span></th>
-                <th>Prob. salga</th>
-                <th>Prob. scenda</th>
+                <th>Prob. sopra{K != null ? ` ${fmtNum(K, 2)}` : ''}</th>
+                <th>Prob. sotto{K != null ? ` ${fmtNum(K, 2)}` : ''}</th>
               </tr></thead>
               <tbody>
-                {horizons.map((h) => (
-                  <tr key={h.target_days}>
-                    <td>~{h.target_days}g</td>
-                    <td className="muted">{h.available ? `${h.expiry} (${h.days_to_expiry}g)` : '—'}</td>
-                    <td>{h.available ? `±${fmtNum(h.expected_move_pct, 1)}%` : <span className="muted small">{h.note || '—'}</span>}</td>
-                    <td className="pos">{h.available && h.prob_up != null ? fmtPct(h.prob_up * 100) : '—'}</td>
-                    <td className="neg">{h.available && h.prob_down != null ? fmtPct(h.prob_down * 100) : '—'}</td>
-                  </tr>
-                ))}
+                {horizons.map((h) => {
+                  const p = probsFor(h)
+                  return (
+                    <tr key={h.target_days}>
+                      <td>~{h.target_days}{pluralize(h.target_days, 'g', 'g')}</td>
+                      <td className="muted">{h.available ? `${h.expiry} (${h.days_to_expiry}g)` : '—'}</td>
+                      <td>{h.available ? `±${fmtNum(h.expected_move_pct, 1)}%` : <span className="muted small">{h.note || '—'}</span>}</td>
+                      <td className="pos">{p.above != null ? fmtPct(p.above * 100) : '—'}</td>
+                      <td className="neg">{p.below != null ? fmtPct(p.below * 100) : '—'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
           <p className="muted small">
-            Calcolate dalla volatilità implicita ATM (Black-Scholes, risk-neutral) sul livello
-            corrente ({fmtNum(implied.level, 2)}). Sono gli odds impliciti nei prezzi, NON una previsione.
+            Calcolate dalla volatilità implicita ATM (Black-Scholes, risk-neutral)
+            {K != null ? ` sul tuo livello ${fmtNum(K, 2)}` : ` sul livello corrente ${fmtNum(implied.level, 2)}`}.
+            Sono gli odds impliciti nei prezzi, NON una previsione.
           </p>
         </>
       )}
@@ -309,24 +364,66 @@ function ImpliedPanel({ implied, nowMs }) {
   )
 }
 
-// d. Optional AI synthesis — describes, never calls direction.
-function AISummary({ s }) {
+// d. AI synthesis — PAID action (separate button). Interprets the REAL
+// probabilities + base rates; conditional scenarios; never a directional call.
+function AISummary({ s, onRun, ai, level }) {
   return (
     <section className="panel">
       <header className="panel-head">
-        <h2>Sintesi AI</h2>
-        <span className="muted small">descrive il setup · nessuna chiamata direzionale</span>
+        <h2>Analisi AI</h2>
+        <span className="muted small">interpreta le probabilità reali · nessuna chiamata direzionale</span>
       </header>
-      <p style={{ whiteSpace: 'pre-wrap' }}>{s.summary}</p>
-      {s.tensions?.length > 0 && (
+
+      <div className="desk-controls">
+        <button className="primary" onClick={onRun} disabled={ai.loading || !apiConfigured}>
+          {ai.loading ? 'Genero analisi…' : 'Genera analisi AI'}
+        </button>
+        <span className="muted small">
+          💸 a pagamento (usa l’API Anthropic){level !== '' ? ` · userà il livello ${level}` : ''}
+        </span>
+      </div>
+      {!apiConfigured && (
+        <p className="muted small">Configura <code>VITE_API_URL</code> e <code>VITE_API_TOKEN</code> e avvia l’API (<code>python -m app.main api</code>).</p>
+      )}
+      {ai.error && <p className="error">Analisi non riuscita — {ai.error}</p>}
+
+      {!s && !ai.loading && (
+        <p className="muted small">Nessuna analisi ancora generata per questo snapshot.</p>
+      )}
+
+      {s && (
         <>
-          <h3 className="muted small" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tensioni</h3>
-          <ul className="tight">{s.tensions.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <div className="lean-head">
+            <span className="muted small">convinzione (qualitativa):</span>
+            <span className={`fac ${convClass(s.conviction)}`}>{s.conviction || '—'}</span>
+          </div>
+          <p style={{ whiteSpace: 'pre-wrap' }}>{s.read || s.summary}</p>
+          {s.upside_drivers?.length > 0 && (
+            <>
+              <h3 className="ctx-h muted small">Driver di rialzo</h3>
+              <ul className="tight">{s.upside_drivers.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </>
+          )}
+          {s.downside_drivers?.length > 0 && (
+            <>
+              <h3 className="ctx-h muted small">Driver di ribasso</h3>
+              <ul className="tight">{s.downside_drivers.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </>
+          )}
+          {s.watch_next_event?.length > 0 && (
+            <>
+              <h3 className="ctx-h muted small">Da monitorare al prossimo evento</h3>
+              <ul className="tight">{s.watch_next_event.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </>
+          )}
+          {s.uncertainty_note && <p className="honest-note">{s.uncertainty_note}</p>}
         </>
       )}
-      {s.uncertainty_note && <p className="honest-note">{s.uncertainty_note}</p>}
     </section>
   )
+}
+function convClass(c) {
+  return { alta: 'fac-bull', bassa: 'fac-bear' }[c] || 'fac-neutral'
 }
 
 // Detail: macro drivers + upcoming events + key-figure statements.

@@ -100,6 +100,14 @@ class AppConfig:
     def deadline_warn_days(self) -> int:
         return int(self.risk.get("deadline_warn_days", 3))
 
+    @property
+    def rr_min(self) -> float:
+        return float(self.risk.get("rr_min", 1.5))
+
+    @property
+    def event_warn_hours(self) -> int:
+        return int(self.risk.get("event_warn_hours", 48))
+
     # --- options desk (M5) -----------------------------------------
     @property
     def options_cron(self) -> str:
@@ -108,6 +116,11 @@ class AppConfig:
     @property
     def alerts_cron(self) -> str:
         return os.getenv("ALERTS_CRON", self.schedule.get("alerts_cron", "*/10 * * * *"))
+
+    # --- backtest bench --------------------------------------------
+    @property
+    def backtest(self) -> dict[str, Any]:
+        return dict(self.raw.get("backtest", {}) or {})
 
     # --- decision board (M9) ---------------------------------------
     @property
