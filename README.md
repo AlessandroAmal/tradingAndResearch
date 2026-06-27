@@ -503,6 +503,42 @@ python -m app.main backtest --scan          # whole universe × param grid (data
   discipline and risk, not direction.* **Apply migration `0014_gate_settings.sql`**
   (adds `rr_min` / `event_warn_hours` to `risk_settings`).
 
+## Avvio automatico (macOS)
+
+Per non lanciare comandi a mano: due (tre) **LaunchAgent** che partono al login e
+si riavviano se crashano — niente terminale aperto. READ-ONLY: analizzano, validano
+e servono la dashboard, **non inviano ordini**. Nessun segreto nei plist: il worker
+legge le chiavi dal `.env` del repo a runtime.
+
+- `com.tradingcommandcenter.scheduler` — `python -m app.main run` (APScheduler:
+  prezzi, news, briefing, macro, decision board, alert…).
+- `com.tradingcommandcenter.api` — `python -m app.main api` (il backend del bottone
+  **Aggiorna** `/refresh` e di **Genera analisi AI**).
+- `com.tradingcommandcenter.dashboard` *(opzionale)* — serve la dashboard **già
+  buildata** via `python -m http.server` su `:5273` (nessun Node a runtime), così la
+  UI è raggiungibile senza terminale.
+
+### Installa una volta sola
+```bash
+bash scripts/install_services.sh            # scheduler + api + dashboard
+# solo i due backend (avvii tu la UI quando vuoi):
+WITH_DASHBOARD=0 bash scripts/install_services.sh
+```
+Prerequisiti: `worker/.venv` creato (deps installate) e il `.env` del repo compilato.
+Lo script è **idempotente** (ricaricalo quando vuoi) e usa path assoluti della macchina.
+
+### Controlla / log / disattiva
+```bash
+launchctl list | grep com.tradingcommandcenter     # devono comparire i 3 label (con PID = attivi)
+curl -s http://127.0.0.1:8787/health                # {"ok":true,...}
+open http://localhost:5273/                          # la dashboard
+tail -f logs/*.log                                   # diagnostica (stdout/err per servizio)
+bash scripts/uninstall_services.sh                   # ferma e rimuove tutto
+```
+
+**Limite:** restano attivi solo a **Mac acceso e utente loggato** (è avvio al login,
+non un server 24/7). Per il 24/7 serve un deploy su VPS — fuori da questo scope.
+
 ## Hard rules (see CLAUDE.md)
 
 Read-only · secrets only in `.env` · universe/holdings/risk all in config ·
