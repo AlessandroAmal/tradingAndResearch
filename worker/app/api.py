@@ -33,6 +33,7 @@ from . import options as opt
 from .ai import build_ai_client
 from .ai.decision import summarize_decision_board
 from .config import AppConfig, load_config
+from .ingestion.briefing_job import run_briefing
 from .ingestion.calendar_job import run_calendar_ingestion
 from .ingestion.macro_job import run_macro_ingestion
 from .ingestion.prices_job import run_prices_ingestion
@@ -205,6 +206,37 @@ def decision_ai(instrument: str, body: AIRequest | None = None) -> dict[str, Any
         storage.upsert_decision_board(instrument, board)
         _ai_last_run[instrument] = time.monotonic()
         return {"ok": True, "ai_summary": summary, "level_probs": level_probs}
+    finally:
+        lock.release()
+
+
+# --- /briefing/{kind} (PAID) -----------------------------------------
+@app.post("/briefing/{kind}", dependencies=[Depends(require_token)])
+def briefing(kind: str) -> dict[str, Any]:
+    if kind not in ("morning", "intraday"):
+        raise HTTPException(status_code=400, detail="kind deve essere 'morning' o 'intraday'.")
+    cfg, storage = _cfg(), _storage()
+    if not cfg.ai_enabled:
+        raise HTTPException(status_code=503, detail="Layer AI disabilitato in config.")
+
+    key = f"briefing:{kind}"
+    lock = _ai_lock(key)
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Briefing già in corso.")
+    try:
+        last = _ai_last_run.get(key)
+        if last is not None and (time.monotonic() - last) < AI_MIN_INTERVAL_S:
+            raise HTTPException(status_code=429, detail="Briefing richiesto troppo di recente.")
+        try:
+            ai = build_ai_client()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=503, detail=f"AI non disponibile: {exc}") from exc
+
+        res = run_briefing(cfg, storage, ai, kind)
+        if not res or res.get("ok") != 1:
+            raise HTTPException(status_code=502, detail="Il briefing non ha prodotto output.")
+        _ai_last_run[key] = time.monotonic()
+        return {"ok": True, "kind": kind}
     finally:
         lock.release()
 

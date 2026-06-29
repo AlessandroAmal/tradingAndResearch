@@ -300,7 +300,44 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'onesta', label: '11 · Leggere con onestà', blocks: [
+    id: 'teoria', label: '11 · Teoria & fonti', blocks: [
+      { type: 'p', text: 'Per ogni dato: COS’È · PERCHÉ conta / come si legge · la TEORIA · i CAVEAT. Tono didattico: l’onestà è parte del metodo.' },
+      { type: 'h', text: 'Cosa muove ogni strumento (e via quale fonte)' },
+      { type: 'dl', items: [
+        { term: 'Oro (GC=F)', def: 'Tasso reale 10y (DFII10) e dollaro (DTWEXBGS) da FRED; VIX come clima. Teoria: l’oro non rende cedole, quindi compete col rendimento reale dei Treasury — tasso reale ↑ = costo-opportunità ↑. Caveat: relazione storica, non legge fisica.' },
+        { term: 'EUR/USD', def: 'Driver principale: differenziale tassi Fed-BCE (DFEDTARU − ECBDFR, FRED). Teoria: il carry e i flussi seguono il differenziale di policy. Caveat: conta anche il rischio globale e i flussi, non solo i tassi.' },
+        { term: 'Nasdaq (^NDX)', def: 'Tasso reale (duration dei tech) + spread HY (condizioni finanziarie) + VIX; la tesi vera arriva da news/utili mega-cap. Teoria: i cash-flow lontani sono molto sensibili al tasso di sconto.' },
+        { term: 'Azioni singole (NVDA/TSLA/GOOGL)', def: 'Driver = narrativa del titolo (news/key-figure) ed EARNINGS; la macro è solo sfondo. Lo skew delle opzioni del titolo è il read di posizionamento (no COT sui singoli).' },
+        { term: 'Rame (HG=F)', def: 'Crescita Cina + domanda industriale (via PMI/news, non una serie FRED pulita); dollaro come contesto. COT (Managed Money) utile, contrarian agli estremi.' },
+        { term: 'DAX (^GDAXI)', def: 'BCE + rischio globale + Cina (esportatori) + euro. Opzioni Eurex non su yfinance → proxy ETF approssimato (implicite a bassa affidabilità). Niente COT (Eurex non è CFTC).' },
+      ] },
+      { type: 'h', text: 'Probabilità implicita (l’unico numero calibrato)' },
+      { type: 'note', text: 'È la probabilità RISK-NEUTRAL estratta dai prezzi delle opzioni: incorpora in tempo reale ciò che il mercato sconta, quindi è l’unica “calibrata”. ATM ≈ 50/50 perché a breve il drift è trascurabile rispetto alla volatilità. Il movimento atteso = IV×√T. Caveat: risk-neutral ≠ probabilità “reale”; include un premio per il rischio.' },
+      { type: 'h', text: 'Base rate (frequenza storica)' },
+      { type: 'note', text: 'Conta quante volte (n) una situazione si è ripetuta e cosa è successo dopo. Mostriamo SEMPRE n: con n piccolo non si conclude nulla. Fallacia dello scommettitore: dopo 5 ribassi non è “dovuto” un rimbalzo — uno streak lungo è spesso segno di trend, non di inversione.' },
+      { type: 'h', text: 'Tecnica = contesto, non segnale' },
+      { type: 'dl', items: [
+        { term: 'MA 200/50', def: 'Riferimenti di tendenza. Teoria: catturano la persistenza dei trend; l’evidenza accademica sul time-series momentum è mista e dipende dal regime/costi. Contesto, non un trigger.' },
+        { term: 'RSI', def: 'Sbilanciamento recente con soglie tarate per strumento (non 70/30 ovunque). “Ipercomprato” in un trend forte può restarci a lungo: stato di attenzione, non inversione.' },
+        { term: 'ATR', def: 'Volatilità realizzata: serve a dimensionare stop realistici, non a prevedere la direzione.' },
+      ] },
+      { type: 'h', text: 'Segnali da desk' },
+      { type: 'ul', items: [
+        'Skew / risk reversal: dove si concentrano coperture/flussi (lean prezzato), NON una previsione; su smile rade = bassa affidabilità.',
+        'Expected-move sugli eventi: magnitudo che il mercato prezza fino alla scadenza che abbraccia l’evento — ampiezza, non direzione.',
+        'COT: posizionamento; utile come CONTRARIAN solo agli estremi del percentile; debole sugli indici azionari (meglio lo skew); ritardo martedì→venerdì.',
+      ] },
+      { type: 'h', text: 'Lettura di confluenza (la lancetta)' },
+      { type: 'note', text: 'Somma pesata dello stato dei fattori su −100..+100: è l’ALLINEAMENTO delle condizioni attuali, NON una probabilità e NON un segnale compra/vendi. Per questo non vedrai mai un “X% sale” fabbricato: la probabilità resta quella implicita.' },
+      { type: 'h', text: 'Gestione del rischio & eventi' },
+      { type: 'ul', items: [
+        'L’edge sostenibile sta in COME scommetti: sizing corretto, R:R, limiti di heat, scadenze — più che nell’indovinare la direzione.',
+        'Eventi: il primo movimento spesso si inverte; usa countdown + rischio-evento + strutture a rischio definito (opzioni) per non farti sorprendere "dentro" un trade.',
+      ] },
+    ],
+  },
+  {
+    id: 'onesta', label: '12 · Leggere con onestà', blocks: [
       { type: 'p', text: 'Il filo conduttore del cockpit: niente segnali finti.' },
       { type: 'ul', items: [
         'Le probabilità (POP) sono quelle implicite nei prezzi — gli odds del mercato, non profezie.',

@@ -48,7 +48,7 @@ def test_cot_is_instrument_driven_no_hardcoded_market(monkeypatch):
 
     class FakeProv:
         name = "fake"
-        def fetch_history(self, market, *, lookback_weeks):
+        def fetch_history(self, market, *, lookback_weeks, report="tff"):
             captured["market"] = market
             captured["lookback"] = lookback_weeks
             return [CotReport(report_date=date(2026, 6, 23), long=120, short=80,
@@ -68,7 +68,7 @@ def test_cot_is_instrument_driven_no_hardcoded_market(monkeypatch):
 def test_cot_note_uses_eur_market_for_eurusd(monkeypatch):
     class FakeProv:
         name = "fake"
-        def fetch_history(self, market, *, lookback_weeks):
+        def fetch_history(self, market, *, lookback_weeks, report="tff"):
             return [CotReport(report_date=date(2026, 6, 23), long=1, short=1, net=0,
                               open_interest=1, source="fake")]
     import app.providers.positioning as pos

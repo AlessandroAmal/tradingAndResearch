@@ -53,6 +53,17 @@ def run_calendar_ingestion(
             log.error("Calendar empty and seed disabled — no events ingested.")
             return {"ok": 0, "failed": 1}
 
+    # Earnings (single stocks): the dominant catalyst. Symbol-scoped events so a
+    # stock's report only shows on its own board. Best-effort — never blocks.
+    try:
+        from .earnings import upcoming_earnings_events
+        earnings = upcoming_earnings_events(cfg)
+        if earnings:
+            events = list(events) + earnings
+            log.info("Calendar: added %d upcoming earnings events", len(earnings))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Earnings ingestion skipped: %s", exc)
+
     rows = [
         {
             "title": e.title,

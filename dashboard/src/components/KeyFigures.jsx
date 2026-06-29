@@ -4,7 +4,7 @@ import { fetchKeyFigures } from '../api/data'
 // "Key Figures" feed: each statement with the figure, affected instruments,
 // and a one-line "why it matters" (AI impact mapping). Synthesis only —
 // shown as possible influence, never as certainty (CLAUDE.md §5).
-export default function KeyFigures() {
+export default function KeyFigures({ refreshKey = 0 }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -21,7 +21,7 @@ export default function KeyFigures() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshKey])
 
   return (
     <section className="panel">

@@ -374,7 +374,7 @@ class SupabaseStorage:
         now = datetime.now(timezone.utc).isoformat()
         return (
             self._client.table("events")
-            .select("title, event_time, importance, category")
+            .select("title, event_time, importance, category, symbols")
             .gte("event_time", now)
             .order("event_time", desc=False)
             .limit(limit)

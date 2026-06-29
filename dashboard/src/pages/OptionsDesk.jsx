@@ -16,6 +16,7 @@ import {
 import { fmtNum, fmtPct } from '../lib/format'
 import PayoffChart from '../components/PayoffChart'
 import InfoTip from '../components/InfoTip'
+import { ProbBar } from '../components/Indicators'
 import { OPTION_HELP_BY_KEY as OH } from '../data/guide'
 
 // Desk-configured risk-free rate (mirrors config options.risk_free_rate).
@@ -215,16 +216,20 @@ function DirectionalTab({ chain, spot, expiry }) {
 
       {metrics ? (
         <>
+          <ProbBar value={pop} caption="POP — probabilità di profitto (implicita)" />
           <div className="stat-grid">
             <Stat label="Max loss" tip={OH.max_loss_gain} value={metrics.maxLoss == null ? '∞' : fmtNum(metrics.maxLoss, 2)} />
             <Stat label="Max gain" tip={OH.max_loss_gain} value={metrics.maxGain == null ? '∞' : fmtNum(metrics.maxGain, 2)} />
             <Stat label="Breakeven" tip={OH.breakeven} value={fmtNum(metrics.breakeven, 2)} />
-            <Stat label="POP (implied)" tip={OH.pop} value={pop == null ? '—' : fmtPct(pop * 100)} />
+            <Stat label="R/R" tip={OH.rr} value={metrics.maxLoss && metrics.maxGain ? `${(metrics.maxGain / metrics.maxLoss).toFixed(2)}` : '—'} />
           </div>
           <PayoffChart curve={curve} breakeven={metrics.breakeven} />
+          <p className="honest-note">
+            ⚠ POP alta di solito = payoff piccolo (vendita di premio): NON è “la migliore” da sola — guardala con max loss e R/R.
+            La POP è per QUESTA struttura, non una previsione del sottostante.
+          </p>
           <p className="muted small">
-            POP is the risk-neutral probability implied by option prices (uses spot≈{fmtNum(spot, 1)},
-            IV {sigma != null ? fmtPct(sigma * 100) : '—'}, r {RFR}). Not a forecast.
+            Risk-neutral, implicita nei prezzi (spot≈{fmtNum(spot, 1)}, IV {sigma != null ? fmtPct(sigma * 100) : '—'}, r {RFR}).
           </p>
         </>
       ) : (

@@ -48,6 +48,10 @@ class NewsFigureSource(FigureSource):
         self._require_name = bool(fc.get("require_name_in_title", True))
         self._cues = [c.lower() for c in fc.get("statement_cues", DEFAULT_CUES)]
         self._drop = [d.lower() for d in fc.get("drop_terms", DEFAULT_DROP)]
+        # Context terms let a SURNAME-only match through only when the title also
+        # names the figure's domain (e.g. "Powell" + "Fed") — kills homonyms
+        # (Lucy/Daryl Powell rugby/UK-politics). Per-figure overrides this default.
+        self._context_default = [c.lower() for c in fc.get("context_terms", [])]
 
     def fetch(self, figure: dict) -> list[FigureStatement]:
         name = figure.get("name")
@@ -56,9 +60,10 @@ class NewsFigureSource(FigureSource):
         role = figure.get("role")
         keywords = figure.get("keywords") or [name]
         match_terms = _match_terms(figure)
+        context_terms = [c.lower() for c in (figure.get("context_terms") or self._context_default)]
 
         items: list[FigureStatement] = []
-        items.extend(self._fetch_google_news(name, role, match_terms))
+        items.extend(self._fetch_google_news(name, role, match_terms, context_terms))
 
         press = figure.get("press_rss")
         if press:
@@ -68,7 +73,7 @@ class NewsFigureSource(FigureSource):
         return items
 
     # --- Google News RSS search --------------------------------------
-    def _fetch_google_news(self, name, role, match_terms) -> list[FigureStatement]:
+    def _fetch_google_news(self, name, role, match_terms, context_terms) -> list[FigureStatement]:
         # Query: require a name/match term AND (when configured) a statement cue,
         # so we surface things the figure SAID, not generic institution news.
         names = " OR ".join(f'"{t}"' if " " in t else t for t in match_terms)
@@ -85,7 +90,7 @@ class NewsFigureSource(FigureSource):
             link = entry.get("link")
             if not title or not link:
                 continue
-            if not self._keep(title, match_terms):
+            if not self._keep(title, match_terms, context_terms):
                 continue
             out.append(
                 FigureStatement(
@@ -99,13 +104,22 @@ class NewsFigureSource(FigureSource):
             )
         return out
 
-    def _keep(self, title: str, match_terms: list[str]) -> bool:
+    def _keep(self, title: str, match_terms: list[str], context_terms: list[str]) -> bool:
         low = title.lower()
         if any(bad in low for bad in self._drop):
             return False        # drop obvious non-statements (obituaries etc.)
-        if self._require_name and not any(t.lower() in low for t in match_terms):
-            return False        # the figure must actually be named in the title
-        return True
+        if not self._require_name:
+            return True
+        full = [t.lower() for t in match_terms if " " in t]      # e.g. "jerome powell"
+        short = [t.lower() for t in match_terms if " " not in t]  # e.g. "powell"
+        if any(t in low for t in full):
+            return True         # full distinctive name -> strong match
+        # A surname/single-word match needs domain CONTEXT (kills homonyms:
+        # Lucy/Daryl Powell, St Helens rugby, etc.). No context configured for a
+        # single-word figure (e.g. an institution) -> accept the bare match.
+        if any(t in low for t in short):
+            return (not context_terms) or any(c in low for c in context_terms)
+        return False
 
     # --- official press feed -----------------------------------------
     def _fetch_press(self, name, role, press_url) -> list[FigureStatement]:

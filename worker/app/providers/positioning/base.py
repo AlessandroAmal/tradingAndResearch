@@ -25,8 +25,10 @@ class CotReport:
 class PositioningProvider(Protocol):
     name: str
 
-    def fetch_history(self, market_query: str, *, lookback_weeks: int) -> list[CotReport]:
-        """Weekly COT reports for a market (e.g. 'EURO FX'), oldest→newest.
+    def fetch_history(self, market_query: str, *, lookback_weeks: int,
+                      report: str = "tff") -> list[CotReport]:
+        """Weekly COT reports for a market, oldest→newest. `report` selects the
+        CFTC dataset/category ('tff' financial vs 'disaggregated' commodity).
 
         Must raise on hard failure so the caller can log it and degrade (the
         board simply omits the positioning block when unavailable).

@@ -4,14 +4,17 @@ import { generateAi, apiConfigured } from '../api/control'
 import { probAbove } from '../lib/options'
 import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
 import InfoTip from '../components/InfoTip'
+import ConfluenceGauge from '../components/ConfluenceGauge'
+import { ProbBar, PercentileBar, RsiBar } from '../components/Indicators'
+import { MonitorTestForm, conditionsFromBoard } from '../components/PaperMonitor'
 import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH } from '../data/guide'
 
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
 // Snapshots are produced by `python -m app.main decision` (worker).
-export default function DecisionBoard() {
+export default function DecisionBoard({ initialSymbol = null, instruments, settings, multiplierBySymbol, onSaved }) {
   const [symbols, setSymbols] = useState([])
-  const [symbol, setSymbol] = useState('')
+  const [symbol, setSymbol] = useState(initialSymbol || '')
   const [board, setBoard] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
@@ -29,9 +32,14 @@ export default function DecisionBoard() {
       if (error) { setError(error.message); return }
       const rows = data || []
       setSymbols(rows)
-      if (rows.length) setSymbol(rows[0].symbol)
+      setSymbol((cur) => cur || (rows.length ? rows[0].symbol : ''))
     })
   }, [])
+
+  // When opened from the overview, jump to that instrument.
+  useEffect(() => {
+    if (initialSymbol) setSymbol(initialSymbol)
+  }, [initialSymbol])
 
   const loadBoard = useCallback(() => {
     if (!symbol) return
@@ -85,12 +93,22 @@ export default function DecisionBoard() {
             )}
           </div>
         )}
+        {board && instruments && (
+          <MonitorTestForm
+            symbol={symbol}
+            instruments={instruments}
+            settings={settings}
+            multiplier={multiplierBySymbol?.[symbol] ?? 1}
+            conditions={conditionsFromBoard(board)}
+            onSaved={onSaved}
+          />
+        )}
       </section>
 
       {board && (
         <>
           <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
-          <ConfluenceBoard rows={board.confluence || []} nowMs={nowMs} />
+          <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
           <BaseRatePanel br={board.base_rate} />
           <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
           {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
@@ -107,10 +125,7 @@ export default function DecisionBoard() {
 function SynthesisSection({ synthesis, implied }) {
   if (!synthesis) return null
   const { lean, factors = [], market, divergence, caveats = [] } = synthesis
-  const dirClass = leanClass(lean?.direction)
   const score = lean?.score
-  // bar fill: 0..50% width on the side of the lean (|score|/100 * half-width).
-  const pct = score == null ? 0 : Math.min(Math.abs(score), 100) / 2
 
   return (
     <section className="panel synth">
@@ -120,26 +135,35 @@ function SynthesisSection({ synthesis, implied }) {
         <span className="muted small">fotografia delle condizioni attuali · non una previsione</span>
       </header>
 
-      {/* a. lean with strength */}
-      <div className="lean-head">
-        <span className={`lean-label ${dirClass}`}>{lean?.label || '—'}</span>
-        {score != null && (
-          <span className="muted small">lettura {score > 0 ? '+' : ''}{fmtNum(score, 0)} / 100 · {lean.contributing_factors} fattori</span>
-        )}
-        <InfoTip text={DH.lean.text} label={DH.lean.label} />
+      {/* a. signature gauge + the calibrated implied probability, equal weight */}
+      <div className="synth-top">
+        <div className="synth-gauge">
+          <ConfluenceGauge score={score} label={lean?.label} direction={lean?.direction} />
+          <p className="gauge-caveat">
+            Fotografia delle condizioni attuali — NON una previsione, NON un segnale di acquisto/vendita.
+          </p>
+          {score != null && (
+            <p className="muted small" style={{ textAlign: 'center' }}>
+              {lean.contributing_factors} fattori <InfoTip text={DH.lean.text} label={DH.lean.label} />
+            </p>
+          )}
+        </div>
+        <div className="synth-side">
+          <ProbBar value={market?.prob_up}
+            caption={`Prob. implicita salita${market?.horizon ? ` · ~${market.horizon}g` : ''}`} />
+          <p className="muted small">
+            Il numero <strong>calibrato</strong> è questo (implicito nelle opzioni, gli odds del mercato){' '}
+            <InfoTip text={DH.implied_prob.text} label={DH.implied_prob.label} /> — la lancetta è solo l’allineamento delle condizioni.
+          </p>
+          {divergence && (
+            <div className={`divergence diverg-${divergence.level}`}>
+              <span className="diverg-tag">Condizioni ↔ mercato
+                {' '}<InfoTip text={DH.divergence.text} label={DH.divergence.label} /></span>
+              <span>{divergence.message}</span>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="lean-bar" role="img" aria-label={`lettura ${lean?.label}`}>
-        <span className="lean-axis" />
-        {score != null && (
-          <span
-            className={`lean-fill ${dirClass}`}
-            style={score >= 0
-              ? { left: '50%', width: `${pct}%` }
-              : { right: '50%', width: `${pct}%` }}
-          />
-        )}
-      </div>
-      <p className="muted small">{lean?.disclaimer}</p>
 
       {/* a. factor breakdown — expandable, full transparency */}
       <details className="factors">
@@ -164,20 +188,6 @@ function SynthesisSection({ synthesis, implied }) {
         </div>
       </details>
 
-      {/* c. conditions vs market */}
-      {divergence && (
-        <div className={`divergence diverg-${divergence.level}`}>
-          <span className="diverg-tag">Condizioni ↔ mercato
-            {' '}<InfoTip text={DH.divergence.text} label={DH.divergence.label} /></span>
-          <span>{divergence.message}</span>
-          {market?.prob_up != null && (
-            <span className="muted small">
-              {' '}(odds impliciti a ~{market.horizon}g: prob. salga {fmtPct(market.prob_up * 100)})
-            </span>
-          )}
-        </div>
-      )}
-
       {/* d. fixed caveats */}
       <ul className="tight caveat-list">
         {caveats.map((c, i) => <li key={i} className="muted small">{c}</li>)}
@@ -187,13 +197,16 @@ function SynthesisSection({ synthesis, implied }) {
 }
 
 // a. Confluence — every condition at a glance, colour = state only.
-function ConfluenceBoard({ rows }) {
+function ConfluenceBoard({ rows, rsi }) {
   return (
     <section className="panel">
       <header className="panel-head">
         <h2>Confluenza</h2>
         <span className="muted small">il colore indica solo lo stato, non un’azione</span>
       </header>
+      {rsi?.value != null && (
+        <RsiBar value={rsi.value} overbought={rsi.overbought} oversold={rsi.oversold} />
+      )}
       {rows.length === 0 && <p className="muted small">Dati insufficienti per la confluenza.</p>}
       <div className="conf-grid">
         {rows.map((r) => (
@@ -314,6 +327,14 @@ function ImpliedPanel({ implied, level, onLevelChange }) {
 
       {horizons.length > 0 && (
         <>
+          {(() => {
+            const avail = horizons.filter((h) => h.available)
+            const rep = avail.length ? avail.reduce((a, b) => (b.days_to_expiry > a.days_to_expiry ? b : a)) : null
+            const p = rep ? probsFor(rep) : null
+            return p && p.above != null
+              ? <ProbBar value={p.above} caption={`Prob. sopra ${K != null ? fmtNum(K, 2) : 'livello'} · ~${rep.target_days}g`} />
+              : null
+          })()}
           <div className="desk-controls">
             <label>Il tuo livello (prezzo)
               <input
@@ -495,7 +516,11 @@ function FxSignals({ fx }) {
 
       {/* Skew / risk reversal */}
       <h3 className="ctx-h muted small">Skew / Risk reversal <InfoTip text={FH.skew.text} label={FH.skew.label} /></h3>
-      {rr.length === 0 && <p className="muted small">Smile FXE non disponibile.</p>}
+      {rr.length === 0 && <p className="muted small">Smile opzioni non disponibile.</p>}
+      {(() => {
+        const repr = rr.find((h) => h.percentile != null)
+        return repr ? <PercentileBar pct={repr.percentile} caption={`Risk reversal · percentile (~${repr.target_days}g)`} /> : null
+      })()}
       {rr.length > 0 && (
         <div className="risk-table-wrap">
           <table className="risk-table">
@@ -526,6 +551,7 @@ function FxSignals({ fx }) {
 
       {/* Historical event behaviour */}
       <h3 className="ctx-h muted small">Comportamento storico sugli eventi <InfoTip text={FH.event_behaviour.text} label={FH.event_behaviour.label} /></h3>
+      {fx.earnings_note && <p className="muted small">⚠ {fx.earnings_note}</p>}
       {behEntries.length === 0 && <p className="muted small">Storico eventi non disponibile.</p>}
       {behEntries.length > 0 && (
         <div className="risk-table-wrap">
@@ -548,13 +574,15 @@ function FxSignals({ fx }) {
 
       {/* COT positioning */}
       <h3 className="ctx-h muted small">Posizionamento COT <InfoTip text={FH.cot.text} label={FH.cot.label} /></h3>
-      {!cot || cot.state === 'n/d' ? (
-        <p className="muted small">{cot?.note || 'COT non disponibile.'}</p>
+      {!cot ? (
+        <p className="muted small">Non applicabile a questo strumento (nessun COT CFTC) — lo skew delle opzioni è il read di posizionamento.</p>
+      ) : cot.state === 'n/d' ? (
+        <p className="muted small">{cot.note || 'COT non disponibile.'}</p>
       ) : (
         <>
+          <PercentileBar pct={cot.percentile} caption="Posizione netta · percentile (~3a)" />
           <div className="stat-grid">
-            <Stat label="Netto Lev. Funds" value={cot.net == null ? '—' : fmtNum(cot.net, 0)} />
-            <Stat label="Percentile (~3a)" value={cot.percentile == null ? '—' : `${(cot.percentile * 100).toFixed(0)}°`} />
+            <Stat label="Netto" value={cot.net == null ? '—' : fmtNum(cot.net, 0)} />
             <Stat label="Stato" value={cotLabel(cot.state)} cls={cot.state === 'neutral' ? '' : 'warn'} />
             <Stat label="Al" value={cot.as_of || '—'} />
           </div>

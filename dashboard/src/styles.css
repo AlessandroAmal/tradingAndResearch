@@ -8,42 +8,66 @@
    ===================================================================== */
 
 :root {
-  /* base neutral — deep slate, not pure black */
-  --ink: #0d1117;
-  --surface: #161c24;
-  --surface-2: #1e2731;
-  --line: #2a333f;
-  --line-strong: #3a4350;
-  --text: #e7ebf1;
-  --text-dim: #aeb7c4;
-  --muted: #7d8694;
+  /* ---- TOKEN SYSTEM (M-redesign) ---------------------------------------
+     Dark "professional terminal". Depth by ELEVATION, not by tint. Colour is
+     ONLY meaning (pos/neg/warn) + interaction (accent). Legacy var NAMES are
+     kept (and re-tuned) so the whole app adopts the new palette without churn;
+     new semantic NAMES are added as aliases for new components. */
+
+  /* surfaces — elevation ladder */
+  --bg-base: #0A0D12;
+  --bg-panel: #12161D;
+  --bg-elevated: #1A1F29;
+  --ink: var(--bg-base);          /* legacy alias */
+  --surface: var(--bg-panel);     /* legacy alias */
+  --surface-2: var(--bg-elevated);/* legacy alias */
+
+  /* hairlines — the primary structural device */
+  --border: #242B36;
+  --border-strong: #313945;
+  --line: var(--border);          /* legacy alias */
+  --line-strong: var(--border-strong);
+
+  /* text */
+  --text-primary: #E6E9EF;
+  --text-secondary: #98A2B3;
+  --text-muted: #5B6573;
+  --text: var(--text-primary);    /* legacy alias */
+  --text-dim: var(--text-secondary);
+  --muted: var(--text-muted);
 
   /* semantic — RESERVED for market meaning only */
-  --pos: #3fb950;
-  --pos-bg: rgba(63, 185, 80, 0.12);
-  --neg: #f0533f;
-  --neg-bg: rgba(240, 83, 63, 0.12);
-  --warn: #d99e1a;
-  --warn-bg: rgba(217, 158, 26, 0.12);
+  --pos: #3FA66B;
+  --pos-bg: rgba(63, 166, 107, 0.13);
+  --neg: #E5484D;
+  --neg-bg: rgba(229, 72, 77, 0.13);
+  --warn: #E0A526;
+  --warn-bg: rgba(224, 165, 38, 0.13);
 
-  /* interactive — low-chroma steel (NOT a semantic colour) */
-  --focus: #6f8db0;
-  --focus-bg: rgba(111, 141, 176, 0.16);
+  /* accent — ONLY interaction (focus, active nav, selected row, links) */
+  --accent: #3B82F6;
+  --accent-bg: rgba(59, 130, 246, 0.14);
+  --focus: var(--accent);         /* legacy alias */
+  --focus-bg: var(--accent-bg);
 
-  --r: 10px;
-  --r-sm: 7px;
+  /* terminal = squared corners; hairlines do the structure */
+  --r: 4px;
+  --r-sm: 3px;
   --r-pill: 999px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  /* typography — deliberate, data-first */
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
+  /* type scale: 11/12/13/14/16/20/28 */
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs: 13px;
-  --fs-md: 15px;
-  --fs-lg: 18px;
-  --fs-xl: 22px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
 }
 
 * { box-sizing: border-box; }
@@ -479,3 +503,97 @@ ul.tight li { margin: 2px 0; }
 .gate-info { color: var(--text-dim); background: var(--surface-2); }
 .gate-ok { margin: 6px 0; padding: 7px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm);
   color: var(--pos); background: var(--pos-bg); border: 1px solid var(--pos); }
+
+.briefing-actions { display: flex; align-items: center; gap: 8px; }
+
+/* =====================================================================
+   Visual indicators (M-redesign) — gauges/bars, number always shown,
+   colour = meaning only. Signature: the confluence arc gauge.
+   ===================================================================== */
+.gauge { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.gauge-svg { width: 100%; max-width: 260px; height: auto; }
+.gauge-value { font-family: var(--mono); font-weight: 600; font-size: 26px; fill: var(--text-primary); }
+.gauge-value.pos { fill: var(--pos); } .gauge-value.neg { fill: var(--neg); } .gauge-value.muted { fill: var(--text-secondary); }
+.gauge-end { font-family: var(--mono); font-size: 9px; fill: var(--text-muted); }
+.gauge-label { font-size: var(--fs-sm); font-weight: 600; text-transform: capitalize; }
+.gauge-label.pos { color: var(--pos); } .gauge-label.neg { color: var(--neg); } .gauge-label.muted { color: var(--text-secondary); }
+
+.ind { margin: 7px 0; }
+.ind-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.ind-cap { font-size: var(--fs-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+.ind-num { font-family: var(--mono); font-weight: 600; font-size: var(--fs-md); }
+.ind-num.pos { color: var(--pos); } .ind-num.neg { color: var(--neg); } .ind-num.warn { color: var(--warn); }
+.ind-lim { color: var(--text-muted); font-weight: 400; font-size: var(--fs-sm); }
+.ind-track { position: relative; height: 8px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.ind-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.ind-fill.neutral { background: var(--border-strong); }
+.ind-fill.pos { background: var(--pos); } .ind-fill.warn { background: var(--warn); } .ind-fill.neg { background: var(--neg); }
+.ind-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border-strong); }
+.ind-limmark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-secondary); transform: translateX(-1px); }
+.ind-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--warn); opacity: 0.8; transform: translateX(-1px); }
+.ind-track.pctile { overflow: visible; }
+.ind-zone { position: absolute; top: 0; bottom: 0; background: var(--warn-bg); }
+.ind-zone.lo { left: 0; } .ind-zone.hi { right: 0; }
+.ind-marker { position: absolute; top: -2px; bottom: -2px; width: 3px; background: var(--text-primary); border-radius: 1px; transform: translateX(-1.5px); }
+
+/* compact diverging confluence for instrument tiles */
+.miniconf { display: flex; align-items: center; gap: 8px; }
+.miniconf-track { position: relative; flex: 1; height: 6px; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  background-image: linear-gradient(90deg, rgba(229,72,77,0.35), rgba(91,101,115,0.25) 50%, rgba(63,166,107,0.35)); }
+.miniconf-mid { position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--border-strong); }
+.miniconf-marker { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--text-primary); border-radius: 1px; transform: translateX(-1.5px); }
+.miniconf-val { font-family: var(--mono); font-weight: 600; font-size: var(--fs-sm); min-width: 34px; text-align: right; }
+.miniconf-val.pos { color: var(--pos); } .miniconf-val.neg { color: var(--neg); } .miniconf-val.muted { color: var(--text-secondary); }
+
+/* Sintesi: signature gauge + the calibrated implied probability, side by side */
+.synth-top { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 18px; align-items: start; margin-bottom: 10px; }
+.synth-gauge { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.synth-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gauge-caveat { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--warn); text-align: center; line-height: 1.4; }
+@media (max-width: 720px) { .synth-top { grid-template-columns: 1fr; } }
+
+/* Panoramica — instrument overview table (rows are buttons -> decision board) */
+.ov-table { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.ov-row { display: grid; grid-template-columns: 1.3fr 0.7fr 1.4fr 0.9fr 0.9fr 0.9fr 1.6fr; gap: 12px; align-items: center;
+  background: var(--bg-panel); border: 0; border-radius: 0; padding: 9px 12px; text-align: left; cursor: pointer;
+  font: inherit; color: var(--text-primary); width: 100%; }
+button.ov-row:hover { background: var(--bg-elevated); border-color: transparent; }
+.ov-row.ov-head { cursor: default; background: var(--bg-base); color: var(--text-secondary);
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; }
+.ov-head:hover { background: var(--bg-base); }
+.ov-name { font-weight: 600; }
+.ov-num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.ov-ev { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) {
+  .ov-row { grid-template-columns: 1.2fr 0.7fr 1.2fr 0.9fr; }
+  .ov-row > :nth-child(5), .ov-row > :nth-child(6), .ov-row > :nth-child(7) { display: none; }
+}
+
+/* Tab orientation header */
+.tabhead { margin-bottom: 16px; }
+.tabhead-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tabhead-title { font-size: var(--fs-lg); margin: 0 0 2px; text-transform: none; letter-spacing: 0; color: var(--text-primary); }
+.tabhead-purpose { margin: 0; color: var(--text-secondary); font-size: var(--fs-sm); }
+.tabhead-howto { margin-top: 8px; }
+.tabhead-howto > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-secondary); }
+
+/* Paper (test) position form + badges */
+.paper-form { margin-top: 12px; border: 1px dashed var(--warn); border-radius: var(--r-sm); padding: 12px; background: var(--warn-bg); }
+.paper-badge { display: inline-block; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--warn); border: 1px solid var(--warn); border-radius: var(--r-sm); padding: 1px 7px; margin-bottom: 8px; }
+.paper-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.paper-fields label { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); color: var(--text-secondary); }
+
+/* sortable overview header */
+.ov-row.ov-head button { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-transform: inherit; letter-spacing: inherit; }
+.ov-row.ov-head button:hover { color: var(--text-primary); }
+.ov-sort-active { color: var(--text-primary); }
+.ov-divnote { margin-top: 8px; }
+
+/* Paper (test) position cards — full picture, updates with price */
+.paper-cards { display: flex; flex-direction: column; gap: 10px; }
+.paper-card { border: 1px dashed var(--border-strong); border-left: 3px solid var(--warn); border-radius: var(--r-sm); padding: 10px 12px; background: var(--bg-elevated); }
+.paper-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.paper-card-head .sym { font-family: var(--mono); font-weight: 600; }
+.paper-card-head button { margin-left: auto; }

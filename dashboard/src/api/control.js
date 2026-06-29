@@ -37,3 +37,8 @@ export function refresh() {
 export function generateAi(symbol, level) {
   return post(`/decision/${encodeURIComponent(symbol)}/ai`, level != null ? { level } : {})
 }
+
+// PAID: generate an AI briefing ('morning' | 'intraday') on demand.
+export function generateBriefing(kind = 'intraday') {
+  return post(`/briefing/${encodeURIComponent(kind)}`)
+}

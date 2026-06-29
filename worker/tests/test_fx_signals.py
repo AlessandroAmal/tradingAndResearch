@@ -7,7 +7,7 @@ from pytest import approx
 
 from app.decision import fx_signals as fx
 from app.decision.synthesis import BEARISH, BULLISH, NEUTRAL, confluence_read
-from app.providers.positioning.cftc_provider import _parse_rows
+from app.providers.positioning.cftc_provider import REPORTS, _parse_rows
 
 
 # --- interpolation + risk reversal -----------------------------------
@@ -90,7 +90,7 @@ def test_cftc_parse_net_long_minus_short_sorted():
          "lev_money_positions_long": "900", "lev_money_positions_short": "500",
          "open_interest_all": "4800"},
     ]
-    parsed = _parse_rows(rows)
+    parsed = _parse_rows(rows, REPORTS["tff"]["long"], REPORTS["tff"]["short"])
     assert [c.report_date.isoformat() for c in parsed] == ["2026-06-16", "2026-06-23"]  # oldest first
     assert parsed[-1].net == approx(600.0)   # 1000 - 400
 

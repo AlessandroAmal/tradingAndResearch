@@ -18,6 +18,9 @@ import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
 import KeyFigures from './components/KeyFigures'
 import StatusStrip from './components/StatusStrip'
+import MarketsOverview from './components/MarketsOverview'
+import { PaperPositions } from './components/PaperMonitor'
+import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
 import OptionsDesk from './pages/OptionsDesk'
@@ -39,9 +42,17 @@ export default function App() {
   const [refreshErr, setRefreshErr] = useState(null)
   const [errors, setErrors] = useState({})
   const [nowMs, setNowMs] = useState(Date.now())
+  const [refreshKey, setRefreshKey] = useState(0) // bumped each load -> self-fetching panels re-read
   // Information architecture: primary groups + a trading sub-tab (state only).
   const [primary, setPrimary] = useState('mercati')     // 'mercati' | 'trading' | 'guida'
   const [tradingTab, setTradingTab] = useState('risk')  // 'risk' | 'journal' | 'options'
+  const [decisionSymbol, setDecisionSymbol] = useState(null) // opened from the overview
+
+  const openDecision = (sym) => {
+    setDecisionSymbol(sym)
+    setPrimary('trading')
+    setTradingTab('decision')
+  }
 
   // tick for live countdowns (state only — no browser storage)
   useEffect(() => {
@@ -51,6 +62,7 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
+    setRefreshKey((k) => k + 1) // re-read self-fetching panels (Briefing, Key figures)
     const nextErrors = {}
 
     const inst = await fetchInstruments()
@@ -129,6 +141,10 @@ export default function App() {
     [instruments],
   )
 
+  // Paper (test) positions are separate from real risk: they NEVER count in heat.
+  const realPositions = useMemo(() => positions.filter((p) => !p.paper), [positions])
+  const paperPositions = useMemo(() => positions.filter((p) => p.paper), [positions])
+
   const navItem = (key, label) => (
     <button
       className={`nav-btn ${primary === key ? 'active' : ''}`}
@@ -194,13 +210,17 @@ export default function App() {
 
       {primary !== 'guida' && (
         <StatusStrip
-          positions={positions}
+          positions={realPositions}
           priceBySymbol={priceBySymbol}
           multiplierBySymbol={multiplierBySymbol}
           settings={riskSettings}
           events={events}
           nowMs={nowMs}
         />
+      )}
+
+      {primary === 'mercati' && (
+        <MarketsOverview refreshKey={refreshKey} onOpen={openDecision} nowMs={nowMs} />
       )}
 
       {primary === 'mercati' && (
@@ -214,10 +234,10 @@ export default function App() {
               error={errors.instruments}
             />
             <Catalysts events={events} loading={loading} error={errors.events} nowMs={nowMs} />
-            <KeyFigures />
+            <KeyFigures refreshKey={refreshKey} />
           </div>
           <div className="col-main">
-            <BriefingPanel />
+            <BriefingPanel refreshKey={refreshKey} />
             <InstrumentDetail instrument={selected} />
           </div>
         </main>
@@ -235,56 +255,128 @@ export default function App() {
           </nav>
 
           {tradingTab === 'risk' && (
-            <main className="grid grid-trading">
-              <div className="col-left">
-                <SizingCalculator instruments={instruments} settings={riskSettings} />
-                <TradeGate
-                  instruments={instruments}
-                  settings={riskSettings}
-                  positions={positions}
-                  priceBySymbol={priceBySymbol}
-                  multiplierBySymbol={multiplierBySymbol}
-                  events={events}
-                  onSaved={loadAll}
-                />
-              </div>
-              <div className="col-main">
-                <section className="panel">
-                  <header className="panel-head">
-                    <h2>Posizioni aperte</h2>
-                    {loading && <span className="muted small">aggiorno…</span>}
-                  </header>
-                  {errors.positions && (
-                    <p className="error">Posizioni non disponibili — {errors.positions}</p>
-                  )}
-                  {errors.risk && (
-                    <p className="error small">
-                      Impostazioni di rischio non disponibili — {errors.risk} (applica la 0007 + seed)
-                    </p>
-                  )}
-                  <PositionsTable
-                    positions={positions}
+            <>
+              <TabHeader
+                title="Posizioni & Rischio"
+                purpose="Dimensiona e monitora il rischio. Calcola la size da entry/stop/rischio%; tieni P&L, heat e deadline sotto i tuoi limiti."
+                howto={[
+                  'Usa la calcolatrice di sizing per ottenere la size dal rischio% scelto.',
+                  '“Nuovo trade — checklist” valida i numeri contro le tue regole (warning, non blocchi).',
+                  '“Monitora come test” apre una posizione IPOTETICA (paper) — nessun ordine — per il track record.',
+                ]}
+                onGuide={() => setPrimary('guida')}
+              />
+              <main className="grid grid-trading">
+                <div className="col-left">
+                  <SizingCalculator instruments={instruments} settings={riskSettings} />
+                  <TradeGate
+                    instruments={instruments}
+                    settings={riskSettings}
+                    positions={realPositions}
                     priceBySymbol={priceBySymbol}
                     multiplierBySymbol={multiplierBySymbol}
-                    settings={riskSettings}
-                    nowMs={nowMs}
+                    events={events}
+                    onSaved={loadAll}
                   />
-                </section>
-              </div>
-            </main>
+                </div>
+                <div className="col-main">
+                  <section className="panel">
+                    <header className="panel-head">
+                      <h2>Posizioni aperte (reali)</h2>
+                      {loading && <span className="muted small">aggiorno…</span>}
+                    </header>
+                    {errors.positions && (
+                      <p className="error">Posizioni non disponibili — {errors.positions}</p>
+                    )}
+                    {errors.risk && (
+                      <p className="error small">
+                        Impostazioni di rischio non disponibili — {errors.risk} (applica la 0007 + seed)
+                      </p>
+                    )}
+                    <PositionsTable
+                      positions={realPositions}
+                      priceBySymbol={priceBySymbol}
+                      multiplierBySymbol={multiplierBySymbol}
+                      settings={riskSettings}
+                      nowMs={nowMs}
+                    />
+                  </section>
+                  <section className="panel">
+                    <header className="panel-head">
+                      <h2>Posizioni di test (paper)</h2>
+                      <span className="muted small">ipotetiche · non contano nel rischio reale</span>
+                    </header>
+                    <PaperPositions
+                      positions={paperPositions}
+                      priceBySymbol={priceBySymbol}
+                      multiplierBySymbol={multiplierBySymbol}
+                      nowMs={nowMs}
+                      onChanged={loadAll}
+                    />
+                  </section>
+                </div>
+              </main>
+            </>
           )}
 
-          {tradingTab === 'decision' && <DecisionBoard />}
+          {tradingTab === 'decision' && (
+            <DecisionBoard
+              initialSymbol={decisionSymbol}
+              instruments={instruments}
+              settings={riskSettings}
+              multiplierBySymbol={multiplierBySymbol}
+              onSaved={loadAll}
+            />
+          )}
 
-          {tradingTab === 'backtest' && <Backtest />}
+          {tradingTab === 'backtest' && (
+            <>
+              <TabHeader title="Ricerca / Backtest"
+                purpose="Misura se una regola tecnica ha edge — NON genera segnali."
+                howto={[
+                  'Guarda il NETTO out-of-sample vs buy&hold (non l’in-sample).',
+                  'Lo Sharpe deflazionato sconta il data-snooping (best-of-N).',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <Backtest />
+            </>
+          )}
 
           {tradingTab === 'journal' && (
-            <Journal instruments={instruments} positions={positions} />
+            <>
+              <TabHeader title="Journal"
+                purpose="Registra ogni trade e impara: la review mostra quali tuoi setup funzionano, con n."
+                howto={[
+                  'Le posizioni di test chiuse alimentano la review (esito + P&L).',
+                  'Con poche voci i pattern sono ipotesi, non conclusioni (n sempre visibile).',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <Journal instruments={instruments} positions={positions} />
+            </>
           )}
 
-          {tradingTab === 'options' && <OptionsDesk />}
+          {tradingTab === 'options' && (
+            <>
+              <TabHeader title="Options"
+                purpose="Struttura coperture e trade con perdita massima, R/R e POP."
+                howto={[
+                  'POP = probabilità di profitto implicita di QUELLA struttura, non una previsione.',
+                  'POP alta di solito = payoff piccolo: leggila con max loss e R/R.',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <OptionsDesk />
+            </>
+          )}
 
-          {tradingTab === 'alerts' && <Alerts instruments={instruments} />}
+          {tradingTab === 'alerts' && (
+            <>
+              <TabHeader title="Alert"
+                purpose="Notifiche su rischio, eventi, soglie e key-figure."
+                howto={['Le regole standing e le soglie sono edge-triggered con cooldown (niente spam).']}
+                onGuide={() => setPrimary('guida')} />
+              <Alerts instruments={instruments} />
+            </>
+          )}
         </>
       )}
     </div>

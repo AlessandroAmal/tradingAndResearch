@@ -6,6 +6,7 @@ python-dotenv>=1.0,<2.0
 APScheduler>=3.10,<4.0
 supabase>=2.4,<3.0
 yfinance>=0.2.40
+lxml>=5.0   # required by yfinance get_earnings_dates (single-stock earnings)
 
 # Phase 2 / M3 — news ingestion + AI layer
 feedparser>=6.0,<7.0

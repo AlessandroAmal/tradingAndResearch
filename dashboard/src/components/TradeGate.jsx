@@ -85,19 +85,20 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
     set('alignment', lean === 'neutral' ? 'na' : (lean === dir ? 'aligned' : 'contrarian'))
   }
 
-  async function onConfirm(e) {
+  async function onConfirm(e, paper = false) {
     e.preventDefault()
     if (!form.symbol) return setStatus({ type: 'error', msg: 'Scegli uno strumento.' })
     if (!(size > 0)) return setStatus({ type: 'error', msg: 'Size deve essere > 0.' })
     if (!(entry > 0)) return setStatus({ type: 'error', msg: 'Entry deve essere > 0.' })
-    if (!form.thesis.trim()) return setStatus({ type: 'error', msg: 'La tesi è obbligatoria.' })
+    if (!paper && !form.thesis.trim()) return setStatus({ type: 'error', msg: 'La tesi è obbligatoria.' })
 
     setSaving(true); setStatus(null)
     const inst = instruments.find((i) => i.symbol === form.symbol)
     const posPayload = {
       instrument_id: inst?.id ?? null, symbol: form.symbol, side: form.side,
       size, entry, stop, target, deadline: form.deadline || null,
-      broker: form.broker || null, thesis: form.thesis, status: 'open',
+      broker: paper ? 'TEST' : (form.broker || null), thesis: form.thesis, status: 'open',
+      paper, entry_conditions: paper ? { lean_direction: lean, alignment: form.alignment, captured_at: new Date().toISOString() } : null,
     }
     const { data: pos, error } = await insertPosition(posPayload)
     if (error) { setSaving(false); return setStatus({ type: 'error', msg: error.message }) }
@@ -106,13 +107,15 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
     const align = { aligned: 'allineato alla marea macro', contrarian: 'contrarian (contro la marea)' }[form.alignment] || 'n.d.'
     const draft = {
       position_id: pos?.id ?? null, symbol: form.symbol, thesis: form.thesis,
-      entry_price: entry, stop, size, side: form.side,
-      notes: `Allineamento macro: ${align}${lean ? ` (lean: ${lean})` : ''}`,
+      entry_price: entry, stop, size,
+      notes: `${paper ? 'TEST · ' : ''}${form.side} · Allineamento macro: ${align}${lean ? ` (lean: ${lean})` : ''}`,
       reviewed: false, entry_date: todayISO(),
     }
     const j = await insertJournalEntry(draft)
     setSaving(false)
-    setStatus({ type: 'ok', msg: j.error ? 'Posizione salvata (bozza journal non riuscita).' : 'Posizione + bozza journal salvate.' })
+    setStatus({ type: 'ok', msg: paper
+      ? 'Posizione TEST aperta (nessun ordine) + bozza journal.'
+      : (j.error ? 'Posizione salvata (bozza journal non riuscita).' : 'Posizione + bozza journal salvate.') })
     setForm({ ...EMPTY, broker: form.broker })
     onSaved?.()
   }
@@ -186,8 +189,11 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
         <Stat label="R/R" tip={RH.r_multiple} value={m.rr == null ? '—' : `${m.rr.toFixed(2)}R`} cls={m.rr != null && m.rr < rrMin ? 'warn' : ''} />
         <Stat label="Heat risultante" tip={RH.portfolio_heat} value={fmtPct(m.resultingHeatPct)} cls={m.resultingHeatPct > maxHeat ? 'neg' : ''} />
         <Stat label="Posizioni" tip={RH.concurrent} value={`${m.nConcurrent}/${maxPos}`} cls={m.nConcurrent > maxPos ? 'neg' : ''} />
-        <Stat label="Moltiplicatore" value={`×${multiplier}`} />
+        <Stat label="Moltiplicatore" value={`×${multiplier}`} cls={multiplier === 1 ? 'warn' : ''} />
       </div>
+      {form.symbol && multiplier === 1 && (
+        <p className="muted small">⚠ Point value ×1: il rischio per {form.symbol} è calcolato come 1 unità = 1 (corretto per azioni/crypto; per future/CFD imposta <code>contract_multiplier</code> in config, altrimenti il rischio è sottostimato).</p>
+      )}
 
       {/* Warnings — colour = severity only, non-blocking */}
       <div className="gate-warnings">
@@ -204,8 +210,12 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
       <p className="muted small caveat">{GATE_CAVEAT}</p>
 
       <div className="form-actions">
-        <button className="primary" onClick={onConfirm} disabled={saving}>
+        <button type="button" className="primary" onClick={(e) => onConfirm(e, false)} disabled={saving}>
           {saving ? 'Salvo…' : `Conferma e registra${warnCount ? ` (${warnCount} warning)` : ''}`}
+        </button>
+        <button type="button" className="ghost" onClick={(e) => onConfirm(e, true)} disabled={saving}
+          title="Apre una posizione ipotetica monitorata — nessun ordine">
+          🧪 Monitora come test
         </button>
         {status && <span className={status.type === 'ok' ? 'ok' : 'error'}>{status.msg}</span>}
       </div>

@@ -17,7 +17,7 @@ the board still renders from the last stored values even if FRED is down.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from ..config import AppConfig
 from ..logging_setup import get_logger
@@ -25,7 +25,7 @@ from ..base_rates import STREAK_CAVEAT, streak_base_rate
 from ..providers.options import OptionsProvider
 from ..storage import Storage
 from .. import technicals as tech
-from .implied import _pick_expiry, implied_probabilities
+from .implied import _atm_iv, _pick_expiry, implied_probabilities
 from .synthesis import classify_macro_state, confluence_read
 from . import fx_signals as fxs
 
@@ -110,11 +110,22 @@ def _resolve_macro_driver(storage: Storage, drv: dict, days: int, regime: dict) 
     }
 
 
-def _filter_events(events: list[dict], keywords: list[str], limit: int) -> list[dict]:
-    if not keywords:
-        return events[:limit]
+def _filter_events(events: list[dict], keywords: list[str], symbol: str, limit: int) -> list[dict]:
+    """Keep events relevant to this instrument.
+
+    Symbol-scoped events (e.g. earnings, symbols=[NVDA]) belong ONLY to their
+    instrument; macro events (no symbols) match by keyword. This stops one
+    stock's earnings from showing on another board.
+    """
     kws = [k.lower() for k in keywords]
-    out = [e for e in events if any(k in (e.get("title") or "").lower() for k in kws)]
+    out: list[dict] = []
+    for e in events:
+        syms = e.get("symbols") or []
+        if syms:
+            if symbol in syms:
+                out.append(e)
+        elif not kws or any(k in (e.get("title") or "").lower() for k in kws):
+            out.append(e)
     return out[:limit]
 
 
@@ -201,6 +212,26 @@ def build_confluence(
     return rows
 
 
+def _ev_date(s) -> date | None:
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_expiry_after(expiries: list[str], today: date, target_days: int) -> tuple[str, int] | None:
+    """Smallest expiry with days-to-expiry >= target (the one that SPANS an event)."""
+    best: tuple[str, int] | None = None
+    for e in expiries:
+        d = _ev_date(e)
+        if d is None:
+            continue
+        dte = (d - today).days
+        if dte >= target_days and (best is None or dte < best[1]):
+            best = (e, dte)
+    return best
+
+
 # --- desk signals (instrument-driven: FX, index, …) ------------------
 def _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, today) -> dict:
     """Skew/RR (+percentile via macro_series), expected move on events, historical
@@ -252,7 +283,34 @@ def _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, t
                      "percentile": pct, "lean": fxs.rr_lean(rr.get("rr")), **rr})
 
     # --- expected move on the next events (IV term structure) ---
-    expected = fxs.expected_move_on_events(events, implied.get("horizons", []), today=today)
+    # Use the option expiry that SPANS each event (incl. earnings, which can be
+    # further out than the implied horizons). Seed with the implied horizons, then
+    # add a spanning expiry per upcoming event (fetch + ATM IV) as needed.
+    em_expiries: dict[str, dict] = {}
+    for h in implied.get("horizons", []):
+        if h.get("available") and h.get("atm_iv") and h.get("expiry"):
+            em_expiries[h["expiry"]] = {"expiry": h["expiry"],
+                                        "days_to_expiry": h["days_to_expiry"], "atm_iv": h["atm_iv"]}
+    if expiries and spot:
+        for ev in events:
+            ed = _ev_date(ev.get("event_time"))
+            if not ed or ed < today:
+                continue
+            dte_ev = (ed - today).days
+            pick = _first_expiry_after(expiries, today, dte_ev)
+            if not pick or pick[0] in em_expiries:
+                continue
+            exp, dte = pick
+            if exp not in chain_cache:
+                try:
+                    chain_cache[exp] = options_provider.fetch_chain(proxy, exp)
+                except Exception:  # noqa: BLE001
+                    chain_cache[exp] = []
+            T = max(dte, 0) / 365.0
+            iv = _atm_iv(chain_cache[exp], spot, T, r) if (chain_cache[exp] and T > 0) else None
+            if iv:
+                em_expiries[exp] = {"expiry": exp, "days_to_expiry": dte, "atm_iv": iv}
+    expected = fxs.expected_move_on_events(events, list(em_expiries.values()), today=today)
 
     # --- historical event behaviour (long history + past seeded events) ---
     behaviour = _fx_event_behaviour(cfg, inst, today, fxcfg)
@@ -260,11 +318,18 @@ def _compute_fx_signals(cfg, storage, inst, implied, events, options_provider, t
     # --- COT positioning ---
     cot = _fx_cot(inst, fxcfg)
 
-    return {
+    result = {
         "underlying": proxy, "risk_reversal": skew, "expected_move_events": expected,
         "event_behaviour": behaviour, "cot": cot,
-        "note": "Segnali FX reali (prezzati nelle opzioni o misurati dai dati), NON previsioni.",
+        "note": "Segnali reali (prezzati nelle opzioni o misurati dai dati), NON previsioni.",
     }
+    # Honest flag: earnings requested but no dates available (yfinance gap).
+    if inst.get("earnings") and behaviour.get("earnings_available") is False:
+        result["earnings_note"] = (
+            "Date earnings non disponibili (yfinance): expected-move e storico sugli "
+            "earnings non calcolati per ora."
+        )
+    return result
 
 
 def _fx_event_behaviour(cfg, inst, today, fxcfg) -> dict:
@@ -284,14 +349,30 @@ def _fx_event_behaviour(cfg, inst, today, fxcfg) -> dict:
     by_title: dict[str, list] = {}
     for e in evs:
         by_title.setdefault(e.title, []).append(e.event_time.date())
+    follow = int(fxcfg.get("event_follow_days", 3))
+    min_s = int(fxcfg.get("event_min_sample", 20))
     out = {}
     for title, eds in by_title.items():
-        out[title] = fxs.event_behaviour(
-            dates, closes, eds,
-            follow_days=int(fxcfg.get("event_follow_days", 3)),
-            min_sample=int(fxcfg.get("event_min_sample", 20)),
-        )
-    return {"by_event": out}
+        out[title] = fxs.event_behaviour(dates, closes, eds, follow_days=follow, min_sample=min_s)
+
+    # Single-stock earnings: the dominant catalyst. Past earnings via yfinance.
+    earnings_available = None
+    if inst.get("earnings") and dates:
+        earnings_available = False
+        try:
+            from ..ingestion.earnings import past_earnings
+            from datetime import date as _date
+            start = _date.fromisoformat(dates[0])
+            eds = past_earnings(inst["symbol"], start, today)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Past earnings load failed for %s: %s", inst["symbol"], exc)
+            eds = []
+        if eds:
+            earnings_available = True
+            out[f"Earnings {inst.get('name', inst['symbol'])}"] = fxs.event_behaviour(
+                dates, closes, eds, follow_days=follow, min_sample=min_s)
+
+    return {"by_event": out, "earnings_available": earnings_available}
 
 
 def _fx_cot(inst, fxcfg) -> dict | None:
@@ -302,7 +383,8 @@ def _fx_cot(inst, fxcfg) -> dict | None:
         from ..providers.positioning import build_positioning_provider
         prov = build_positioning_provider(posc.get("provider", "cftc"))
         hist = prov.fetch_history(posc.get("market", "EURO FX"),
-                                  lookback_weeks=int(posc.get("lookback_weeks", 156)))
+                                  lookback_weeks=int(posc.get("lookback_weeks", 156)),
+                                  report=posc.get("report", "tff"))
     except Exception as exc:  # noqa: BLE001
         log.warning("COT fetch failed: %s", exc)
         return {"state": "n/d", "note": f"COT non disponibile: {exc}"}
@@ -391,7 +473,7 @@ def run_decision_board(
             )
 
             up_events = storage.list_upcoming_events(25)
-            events = _filter_events(up_events, list(inst.get("event_keywords", [])), 6)
+            events = _filter_events(up_events, list(inst.get("event_keywords", [])), symbol, 6)
 
             figures: list[dict] = []
             for fig in inst.get("figures", []):

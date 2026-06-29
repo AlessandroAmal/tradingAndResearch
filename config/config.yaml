@@ -167,6 +167,9 @@ calendar:
       - { title: "US PCE (inflazione Fed)", category: economic, importance: high, country: US, time: "12:30", rule: last_business_day }
       - { title: "US Nonfarm Payrolls", category: economic, importance: high, country: US, time: "12:30", rule: nth_weekday, n: 1, weekday: 4 }
       - { title: "China PMI (NBS)", category: economic, importance: medium, country: CN, time: "01:00", rule: day_of_month, day: 30 }
+      - { title: "Eurozona PMI flash", category: economic, importance: medium, country: EU, time: "08:00", rule: day_of_month, day: 23 }
+      - { title: "IFO Germania (clima imprese)", category: economic, importance: medium, country: DE, time: "08:00", rule: day_of_month, day: 25 }
+      - { title: "Eurozona CPI flash", category: economic, importance: high, country: EU, time: "09:00", rule: day_of_month, day: 1 }
 
 # --- Price history / indicators --------------------------------------
 indicators:
@@ -246,7 +249,10 @@ news:
   figures_filter:
     require_name_in_title: true
     statement_cues: ["said", "says", "statement", "remarks", "speech", "testimony", "comments", "warns", "signals", "tells", "told", "reiterates"]
-    drop_terms: ["obituary", "dies", "died", "death", "funeral", "necrolog", "passes away", "passed away"]
+    drop_terms: ["obituary", "dies", "died", "death", "funeral", "necrolog", "passes away", "passed away", "rugby", "st helens", "warrington", "super league"]
+    # Default DOMAIN context: a surname-only match (e.g. "Powell") is kept only if
+    # the title also names the figure's domain — kills homonyms (rugby/UK politics).
+    context_terms: ["fed", "fomc", "federal reserve", "rate", "rates", "interest", "inflation", "monetary", "central bank", "markets", "stocks", "economy", "tariff", "trade", "white house", "earnings", "ceo", "shares"]
 
 # --- Key figures tracker (M4) ----------------------------------------
 # People/institutions whose statements may move the universe. For each,
@@ -259,24 +265,29 @@ figures:
   - name: "Donald Trump"
     role: "US President"
     keywords: ["Trump", "tariffs", "White House"]
-    match_terms: ["Trump"]
+    match_terms: ["Donald Trump", "Trump"]
+    context_terms: ["tariff", "tariffs", "trade", "white house", "president", "fed", "economy", "markets", "china"]
   - name: "Jerome Powell"
     role: "Fed Chair"
-    keywords: ["Powell", "Federal Reserve", "FOMC"]
-    match_terms: ["Powell"]
+    keywords: ["Jerome Powell", "Powell", "Federal Reserve", "FOMC"]
+    match_terms: ["Jerome Powell", "Powell"]
+    context_terms: ["fed", "fomc", "federal reserve", "rate", "rates", "interest", "inflation", "monetary", "central bank"]
     press_rss: "https://www.federalreserve.gov/feeds/press_all.xml"
   - name: "Elon Musk"
     role: "Tesla / xAI CEO"
     keywords: ["Elon Musk", "Tesla"]
-    match_terms: ["Musk"]
+    match_terms: ["Elon Musk", "Musk"]
+    context_terms: ["tesla", "spacex", "xai", "twitter", " x ", "ev", "robotaxi"]
   - name: "Jensen Huang"
     role: "NVIDIA CEO"
     keywords: ["Jensen Huang", "Nvidia"]
-    match_terms: ["Huang"]
+    match_terms: ["Jensen Huang", "Huang"]
+    context_terms: ["nvidia", "ai", "chip", "chips", "gpu", "data center", "semiconductor"]
   - name: "Sundar Pichai"
     role: "Alphabet CEO"
     keywords: ["Sundar Pichai", "Google", "Alphabet"]
-    match_terms: ["Pichai"]
+    match_terms: ["Sundar Pichai", "Pichai"]
+    context_terms: ["google", "alphabet", "ai", "gemini", "search", "antitrust"]
   - name: "China policy"
     role: "PBoC / State Council"
     keywords: ["China policy", "PBoC", "Politburo", "State Council"]
@@ -484,3 +495,119 @@ decision_board:
         market: "NASDAQ MINI"          # E-mini Nasdaq-100 (NQ) nel report TFF
         lookback_weeks: 156
         note: "Per gli indici azionari il COT è un segnale DEBOLE (contano più put/call ratio e flussi): qui è solo contesto. Lo skew QQQ è il read di posizionamento migliore."
+
+    # =================================================================
+    # AZIONI SINGOLE — template comune (NVDA / TSLA / GOOGL):
+    #   options_proxy = il titolo stesso (opzioni liquidissime, niente ETF)
+    #   COT off (nessun positioning: non esiste COT sui singoli titoli;
+    #     lo skew delle opzioni del titolo è il read di posizionamento)
+    #   earnings: true  -> la trimestrale è il catalizzatore dominante
+    #   driver macro = solo contesto di sfondo (DFII10 + ^VIX, peso basso);
+    #     il vero driver è la narrativa del titolo (news/key-figure)
+    # =================================================================
+    - symbol: "NVDA"
+      name: "NVIDIA"
+      options_proxy: "NVDA"
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 75, oversold: 25 }   # molto volatile -> banda più larga
+      range_window: 60
+      round_step: 10
+      figures: ["Jensen Huang"]              # bellwether AI; sensibile a export Cina (via news)
+      event_keywords: ["NVDA", "Nvidia", "earnings", "utili", "export", "China", "FOMC", "CPI"]
+      earnings: true
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo per i growth/duration (peso basso). Il vero driver è la narrativa AI del titolo." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }   # niente cot (positioning off)
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "TSLA"
+      name: "Tesla"
+      options_proxy: "TSLA"
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 75, oversold: 25 }   # alta volatilità, headline-driven
+      range_window: 60
+      round_step: 25
+      figures: ["Elon Musk"]
+      event_keywords: ["TSLA", "Tesla", "Musk", "earnings", "utili", "deliveries", "FOMC", "CPI"]
+      earnings: true
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo (peso basso). Il vero driver sono le headline del titolo." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "GOOGL"
+      name: "Alphabet"
+      options_proxy: "GOOGL"
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }   # volatilità più bassa -> standard
+      range_window: 60
+      round_step: 10
+      figures: ["Sundar Pichai"]             # tema AI/search + antitrust (via news)
+      event_keywords: ["GOOGL", "Google", "Alphabet", "Pichai", "earnings", "utili", "antitrust", "FOMC", "CPI"]
+      earnings: true
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo (peso basso). Il vero driver è la narrativa del titolo." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    # =================================================================
+    # MACRO INSTRUMENT — RAME (commodity). COT UTILE (managed money,
+    # report disaggregated). Opzioni CPER SOTTILI -> skew/implicite a
+    # bassa affidabilità (il motore lo marca da solo). Driver reale =
+    # Cina/domanda industriale, che arriva da news/PMI, non da FRED.
+    # =================================================================
+    - symbol: "HG=F"
+      name: "Rame"
+      options_proxy: "CPER"          # opzioni sottili -> implicite/skew a bassa affidabilità
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }
+      range_window: 60
+      round_step: 0.1                # prezzo rame ~4-5 $/lb -> numeri tondi a 0.10
+      figures: ["China policy"]
+      event_keywords: ["PMI", "China", "Cina", "FOMC", "copper", "rame"]
+      macro_drivers:
+        - { id: "DTWEXBGS", label: "Dollaro (broad)",   source: fred,  supportive_when: falling, weight: 0.5, interpretation: "Dollaro ↓ = commodity in USD più sostenute (contesto inverso)." }
+        - { id: "DFII10",   label: "Tasso reale 10y",   source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto macro (peso basso). Il vero driver è la domanda cinese/industriale, via news/PMI." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.4, cot: 0.6 }   # COT utile sulle commodity
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 3, event_min_sample: 20 }
+      positioning:
+        provider: cftc
+        report: disaggregated        # commodity -> Disaggregated / Managed Money
+        market: "COPPER- #1"         # COMEX HG (verificato sui nomi reali CFTC)
+        lookback_weeks: 156
+        note: "Sulle commodity il COT (Managed Money) è utile: contrarian agli estremi."
+
+    # =================================================================
+    # MACRO INSTRUMENT — DAX (indice europeo). COT OFF (prodotto Eurex,
+    # non riportato dalla CFTC). Proxy opzioni = ETF Germania USA-quotato
+    # (EWG), APPROSSIMATO + opzioni sottili -> skew/implicite a bassa
+    # affidabilità. Tecnica/base-rate da ^GDAXI (storia piena).
+    # =================================================================
+    - symbol: "^GDAXI"
+      name: "DAX 40"
+      options_proxy: "EWG"           # ETF Germania (approssimato, opzioni sottili) — Eurex non su yfinance
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }
+      range_window: 60
+      round_step: 250                # indice ~18-24k
+      figures: ["China policy"]      # BCE/Cina via calendario/news
+      event_keywords: ["ECB", "BCE", "Lagarde", "CPI", "PMI", "IFO", "euro", "FOMC", "China", "Cina"]
+      macro_drivers:
+        - { id: "^VIX",           label: "VIX",                    source: price, supportive_when: falling, weight: 0.6, interpretation: "Risk globale: VIX ↓ = risk-on, supporto per l'azionario." }
+        - { id: "FED_ECB_SPREAD", label: "Differenziale Fed-BCE", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di policy relativa (peso basso). BCE/Cina arrivano da calendario/news." }
+        - { id: "DTWEXBGS",       label: "Dollaro (broad)",       source: fred,  supportive_when: rising,  weight: 0.3, interpretation: "Euro debole (dollaro ↑) aiuta gli esportatori tedeschi (contesto)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.3 }   # niente cot (Eurex, no CFTC)
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 3, event_min_sample: 20 }

@@ -51,6 +51,11 @@ export async function insertPosition(position) {
   return supabase.from('positions').insert(position).select().single()
 }
 
+export async function updatePosition(id, fields) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('positions').update(fields).eq('id', id).select().single()
+}
+
 // Latest AI briefing of a given kind ('morning' | 'intraday').
 export async function fetchLatestBriefing(kind) {
   if (!isConfigured) return NOT_CONFIGURED
@@ -104,6 +109,12 @@ export async function insertJournalEntry(entry) {
 export async function updateJournalEntry(id, fields) {
   if (!isConfigured) return NOT_CONFIGURED
   return supabase.from('journal_entries').update(fields).eq('id', id).select().single()
+}
+
+// Update the journal draft linked to a position (used when closing a test position).
+export async function updateJournalByPosition(positionId, fields) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('journal_entries').update(fields).eq('position_id', positionId)
 }
 
 // --- Alerts (M8) ---
@@ -206,6 +217,15 @@ export async function fetchDecisionBoard(symbol) {
     .select('symbol, name, board, snapshot_at')
     .eq('symbol', symbol)
     .maybeSingle()
+}
+
+// All boards with their JSON — for the overview tiles (lean + implied + next event).
+export async function fetchDecisionBoardsFull() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase
+    .from('decision_boards')
+    .select('symbol, name, board, snapshot_at')
+    .order('symbol', { ascending: true })
 }
 
 // --- Research / Backtest bench ---
