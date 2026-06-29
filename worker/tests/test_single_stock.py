@@ -42,6 +42,15 @@ def test_other_instruments_unchanged():
     assert insts["^NDX"]["positioning"]["market"] == "NASDAQ MINI"
 
 
+def test_fundamentals_only_on_single_stocks():
+    insts = _insts()
+    for sym in ("NVDA", "TSLA", "GOOGL"):
+        assert insts[sym].get("fundamentals") is True
+    # Company fundamentals do NOT apply to indices / FX / commodities.
+    for sym in ("GC=F", "EURUSD=X", "^NDX", "HG=F", "^GDAXI"):
+        assert not insts[sym].get("fundamentals")
+
+
 # --- COT absent is handled, not crashing -----------------------------
 def test_cot_off_returns_none():
     assert board._fx_cot({}, {}) is None                       # no positioning block

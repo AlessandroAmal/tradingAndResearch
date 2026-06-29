@@ -515,6 +515,7 @@ decision_board:
       figures: ["Jensen Huang"]              # bellwether AI; sensibile a export Cina (via news)
       event_keywords: ["NVDA", "Nvidia", "earnings", "utili", "export", "China", "FOMC", "CPI"]
       earnings: true
+      fundamentals: true       # azienda: fondamentali + news fresche (solo titoli singoli)
       macro_drivers:
         - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo per i growth/duration (peso basso). Il vero driver è la narrativa AI del titolo." }
         - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
@@ -533,6 +534,7 @@ decision_board:
       figures: ["Elon Musk"]
       event_keywords: ["TSLA", "Tesla", "Musk", "earnings", "utili", "deliveries", "FOMC", "CPI"]
       earnings: true
+      fundamentals: true       # azienda: fondamentali + news fresche (solo titoli singoli)
       macro_drivers:
         - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo (peso basso). Il vero driver sono le headline del titolo." }
         - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
@@ -551,6 +553,7 @@ decision_board:
       figures: ["Sundar Pichai"]             # tema AI/search + antitrust (via news)
       event_keywords: ["GOOGL", "Google", "Alphabet", "Pichai", "earnings", "utili", "antitrust", "FOMC", "CPI"]
       earnings: true
+      fundamentals: true       # azienda: fondamentali + news fresche (solo titoli singoli)
       macro_drivers:
         - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo (peso basso). Il vero driver è la narrativa del titolo." }
         - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }

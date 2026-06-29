@@ -491,6 +491,21 @@ def run_decision_board(
                 except Exception as exc:  # noqa: BLE001 — optional enrichment
                     log.warning("FX signals failed for %s: %s", symbol, exc)
 
+            # Single-stock: company fundamentals + fresh per-stock news (context).
+            fundamentals = None
+            stock_news_items = None
+            if inst.get("fundamentals"):
+                try:
+                    from ..providers.fundamentals import build_fundamentals_provider
+                    fundamentals = build_fundamentals_provider().fetch(symbol)
+                except Exception as exc:  # noqa: BLE001 — optional enrichment
+                    log.warning("Fundamentals failed for %s: %s", symbol, exc)
+                try:
+                    from .stock_news import recent_news
+                    stock_news_items = recent_news(inst.get("name", symbol), symbol)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Stock news failed for %s: %s", symbol, exc)
+
             # Synthesis (confluence read) — transparent lean + market divergence.
             synthesis = confluence_read(
                 drivers=drivers,
@@ -515,6 +530,8 @@ def run_decision_board(
                 "confluence": confluence,
                 "synthesis": synthesis,
                 "fx_signals": fx,
+                "fundamentals": fundamentals,
+                "news": stock_news_items,
             }
 
             # Optional NON-directional AI synthesis.

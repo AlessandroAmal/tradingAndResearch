@@ -105,7 +105,29 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
         )}
       </section>
 
-      {board && (
+      {board && board.fundamentals && (
+        // SINGLE STOCK: company first (fundamentals/earnings/news), macro demoted.
+        <>
+          <FundamentalsPanel f={board.fundamentals} />
+          <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
+          <StockNewsPanel news={board.news} nowMs={nowMs} />
+          <AnalystsPanel a={board.fundamentals.analysts} last={board.last} />
+          <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
+          <BaseRatePanel br={board.base_rate} />
+          {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
+          <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
+          <details className="panel macro-demote">
+            <summary>Tecnica & lettura macro (contesto secondario)</summary>
+            <p className="muted small">Per un titolo singolo i driver macro sono sfondo: conta soprattutto l’azienda e la notizia.</p>
+            <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
+            <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
+            <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
+          </details>
+        </>
+      )}
+
+      {board && !board.fundamentals && (
+        // MACRO instruments (indices / FX / commodity): confluence-first, unchanged.
         <>
           <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
           <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
@@ -594,6 +616,159 @@ function FxSignals({ fx }) {
     </section>
   )
 }
+
+// --- single-stock panels (fundamentals = context, already priced) ----
+function fmtBig(v) {
+  if (v == null) return '—'
+  const a = Math.abs(v)
+  if (a >= 1e12) return `${(v / 1e12).toFixed(2)}T`
+  if (a >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+  if (a >= 1e6) return `${(v / 1e6).toFixed(1)}M`
+  return fmtNum(v, 0)
+}
+const pctOrNa = (v) => (v == null ? '—' : fmtPct(v * 100).replace('+', ''))
+const numOrNa = (v, d = 1) => (v == null ? '—' : fmtNum(v, d))
+
+function FundamentalsPanel({ f }) {
+  const val = f.valuation || {}, g = f.growth || {}, q = f.quality || {}, c = f.cash || {}
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Fondamentali</h2>
+        <span className="muted small">azienda &amp; valutazione · già riflessi nel prezzo, NON una previsione</span>
+      </header>
+      <h3 className="ctx-h muted small">Valutazione</h3>
+      <div className="stat-grid">
+        <Stat label="P/E (trailing)" value={numOrNa(val.pe_trailing)} />
+        <Stat label="P/E (forward)" value={numOrNa(val.pe_forward)} />
+        <Stat label="P/S" value={numOrNa(val.ps)} />
+        <Stat label="P/B" value={numOrNa(val.pb)} />
+      </div>
+      <p className="muted small">{readValuation(val)}</p>
+
+      <h3 className="ctx-h muted small">Crescita &amp; qualità</h3>
+      <div className="stat-grid">
+        <Stat label="Ricavi YoY" value={pctOrNa(g.revenue_yoy)} cls={signCls(g.revenue_yoy)} />
+        <Stat label="Utili YoY" value={pctOrNa(g.earnings_yoy)} cls={signCls(g.earnings_yoy)} />
+        <Stat label="Margine lordo" value={pctOrNa(q.gross_margin)} />
+        <Stat label="Margine netto" value={pctOrNa(q.net_margin)} />
+        <Stat label="Margine oper." value={pctOrNa(q.operating_margin)} />
+        <Stat label="ROE" value={pctOrNa(q.roe)} />
+      </div>
+      <p className="muted small">{readQuality(g, q)}</p>
+
+      <h3 className="ctx-h muted small">Cassa &amp; bilancio</h3>
+      <div className="stat-grid">
+        <Stat label="Free cash flow" value={fmtBig(c.free_cash_flow)} cls={signCls(c.free_cash_flow)} />
+        <Stat label="Op. cash flow" value={fmtBig(c.operating_cash_flow)} />
+        <Stat label="Cassa" value={fmtBig(c.cash)} />
+        <Stat label="Debito" value={fmtBig(c.debt)} />
+        <Stat label="Debt/Equity" value={numOrNa(c.debt_to_equity)} />
+      </div>
+      <p className="muted small">{readCash(c)}</p>
+      <p className="muted small caveat">{f.note}</p>
+    </section>
+  )
+}
+
+function EarningsPanel({ f, fx, nowMs }) {
+  const e = f.earnings || {}
+  const sur = e.surprises || []
+  const em = (fx?.expected_move_events || []).find((x) => /earn|util/i.test(x.event || ''))
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Utili (earnings)</h2>
+        <span className="muted small">il catalizzatore dominante di un titolo</span>
+      </header>
+      <div className="stat-grid">
+        <Stat label="Prossimi utili" value={e.next_date || '—'} />
+        <Stat label="Tra" value={e.next_date ? countdown(`${e.next_date}T20:00:00Z`, nowMs) : '—'} />
+        <Stat label="Consenso EPS" value={e.next_eps_estimate == null ? '—' : fmtNum(e.next_eps_estimate, 2)} />
+        <Stat label="EPS fwd" value={e.eps_forward == null ? '—' : fmtNum(e.eps_forward, 2)} />
+        {em && <Stat label="Mov. atteso" value={`±${fmtNum(em.expected_move_pct, 1)}%`} />}
+      </div>
+      {sur.length > 0 ? (
+        <>
+          <h3 className="ctx-h muted small">Storico sorprese</h3>
+          <div className="risk-table-wrap">
+            <table className="risk-table">
+              <thead><tr><th>Data</th><th>EPS</th><th>Atteso</th><th>Sorpresa</th><th>Esito</th></tr></thead>
+              <tbody>
+                {sur.map((s) => (
+                  <tr key={s.date}>
+                    <td>{s.date}</td>
+                    <td>{numOrNa(s.reported, 2)}</td>
+                    <td className="muted">{numOrNa(s.estimate, 2)}</td>
+                    <td className={signCls(s.surprise_pct)}>{s.surprise_pct == null ? '—' : `${fmtNum(s.surprise_pct, 1)}%`}</td>
+                    <td><span className={`fac ${s.beat ? 'fac-bull' : 'fac-bear'}`}>{s.beat ? 'beat' : 'miss'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : <p className="muted small">Storico sorprese non disponibile.</p>}
+      <p className="muted small">Il movimento atteso è la magnitudo implicita nelle opzioni, non una direzione.</p>
+    </section>
+  )
+}
+
+function StockNewsPanel({ news, nowMs }) {
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Cosa muove il titolo</h2>
+        <span className="muted small">news recenti (nome + ticker)</span>
+      </header>
+      {(!news || news.length === 0) && <p className="muted small">Nessuna news recente trovata.</p>}
+      <ul className="tight">
+        {(news || []).map((n, i) => (
+          <li key={i}>
+            <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>{' '}
+            <span className="muted small">{n.source}{n.published_at ? ` · ${relativeTime(n.published_at, nowMs)}` : ''}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function AnalystsPanel({ a, last }) {
+  if (!a) return null
+  const upside = a.target_mean != null && last ? (a.target_mean / last - 1) * 100 : null
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Consenso analisti</h2>
+        <span className="muted small">contesto · NON calibrato, non un segnale</span>
+      </header>
+      <div className="stat-grid">
+        <Stat label="Target medio" value={numOrNa(a.target_mean, 2)} />
+        <Stat label="vs prezzo" value={upside == null ? '—' : fmtPct(upside)} cls={signCls(upside)} />
+        <Stat label="Rating" value={a.recommendation || '—'} />
+        <Stat label="N° analisti" value={a.n_analysts == null ? '—' : fmtNum(a.n_analysts, 0)} />
+      </div>
+      <p className="muted small caveat">I target degli analisti sono contesto, spesso in ritardo e non calibrati: la probabilità calibrata resta quella implicita nelle opzioni.</p>
+    </section>
+  )
+}
+
+function readValuation(v) {
+  if (v.pe_forward != null) return `P/E forward ${fmtNum(v.pe_forward, 0)}: ${v.pe_forward > 30 ? 'paghi molto per la crescita attesa' : v.pe_forward < 12 ? 'valutazione contenuta' : 'valutazione media'}.`
+  return 'Valutazione: dati parziali (n/d).'
+}
+function readQuality(g, q) {
+  const parts = []
+  if (g.revenue_yoy != null) parts.push(`ricavi ${g.revenue_yoy >= 0 ? 'in crescita' : 'in calo'} ${pctOrNa(g.revenue_yoy)} YoY`)
+  if (q.net_margin != null) parts.push(`margine netto ${pctOrNa(q.net_margin)}`)
+  return parts.length ? `${parts.join(', ')}.` : 'Crescita/qualità: n/d.'
+}
+function readCash(c) {
+  if (c.free_cash_flow != null) return `Free cash flow ${c.free_cash_flow >= 0 ? 'positivo' : 'negativo'} (${fmtBig(c.free_cash_flow)})${c.debt_to_equity != null ? `, debt/equity ${fmtNum(c.debt_to_equity, 0)}` : ''}.`
+  return 'Cassa/bilancio: n/d.'
+}
+function signCls(v) { return v == null ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '' }
 
 function Stat({ label, value, cls = '' }) {
   return (

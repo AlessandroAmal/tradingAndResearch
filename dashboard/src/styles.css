@@ -597,3 +597,8 @@ button.ov-row:hover { background: var(--bg-elevated); border-color: transparent;
 .paper-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .paper-card-head .sym { font-family: var(--mono); font-weight: 600; }
 .paper-card-head button { margin-left: auto; }
+
+/* Single-stock: macro confluence demoted to a collapsible context section */
+.macro-demote > summary { cursor: pointer; font-weight: 600; color: var(--text-secondary); }
+.macro-demote[open] > summary { margin-bottom: 8px; }
+.macro-demote .panel { box-shadow: none; }
