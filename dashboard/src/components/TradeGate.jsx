@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { insertPosition, insertJournalEntry, fetchDecisionBoard } from '../api/data'
 import { positionSize, evaluatePosition } from '../lib/risk'
 import { evaluateGate, GATE_CAVEAT } from '../lib/gate'
+import { committedInWindows, setAsideToday } from '../lib/discipline'
+import { BudgetStrip, GateWarnings, capsFromSettings, gateInputsForSymbol } from './GateShared'
 import { fmtNum, fmtPct } from '../lib/format'
 import InfoTip from './InfoTip'
 import { RISK_HELP_BY_KEY as RH } from '../data/guide'
@@ -20,9 +22,10 @@ const EMPTY = {
 
 // Pre-trade gate — checklist that VALIDATES numbers against your rules and warns
 // (never blocks, read-only), then records the position + a linked journal draft.
-export default function TradeGate({ instruments, settings, positions, priceBySymbol, multiplierBySymbol, events, defaultBroker, onSaved }) {
+export default function TradeGate({ instruments, settings, positions, closedPositions, priceBySymbol, multiplierBySymbol, events, defaultBroker, onSaved }) {
   const [form, setForm] = useState({ ...EMPTY, broker: defaultBroker || '' })
   const [lean, setLean] = useState(null)
+  const [technicals, setTechnicals] = useState(null)
   const [status, setStatus] = useState(null)
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
@@ -33,19 +36,32 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
   const maxPos = Number(settings?.max_concurrent_positions ?? 8)
   const rrMin = Number(settings?.rr_min ?? 1.5)
   const eventWarnHours = Number(settings?.event_warn_hours ?? 48)
+  const stopAtrMinMultiple = Number(settings?.stop_atr_min_multiple ?? 1.5)
 
   const multiplier = useMemo(
     () => Number(multiplierBySymbol?.[form.symbol]) || 1,
     [multiplierBySymbol, form.symbol],
   )
 
-  // Decision-board lean for the selected instrument ("con o contro la marea").
+  // Decision-board lean + technicals (ATR for stop-room, MAs for countertrend).
   useEffect(() => {
-    if (!form.symbol) { setLean(null); return }
+    if (!form.symbol) { setLean(null); setTechnicals(null); return }
     fetchDecisionBoard(form.symbol).then(({ data }) => {
       setLean(data?.board?.synthesis?.lean?.direction || null)
+      setTechnicals(data?.board?.technicals || null)
     })
   }, [form.symbol])
+
+  // Committed real risk per window + today's set-aside reminder.
+  const caps = useMemo(() => capsFromSettings(settings), [settings])
+  const budgetUsed = useMemo(
+    () => committedInWindows(positions, multiplierBySymbol),
+    [positions, multiplierBySymbol],
+  )
+  const setAside = useMemo(
+    () => setAsideToday(closedPositions, Number(settings?.set_aside_per_day ?? 100)),
+    [closedPositions, settings],
+  )
 
   // Existing portfolio heat from open positions (with correct point value).
   const existingHeatPct = useMemo(() => {
@@ -63,16 +79,25 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
   const target = form.target === '' ? null : Number(form.target)
   const size = Number(form.size)
 
+  const disc = useMemo(() => gateInputsForSymbol({
+    symbol: form.symbol, technicals, positions, closedPositions,
+    current: priceBySymbol?.[form.symbol], multiplier,
+  }), [form.symbol, technicals, positions, closedPositions, priceBySymbol, multiplier])
+
   const gate = useMemo(() => evaluateGate({
     symbol: form.symbol, side: form.side, entry, stop, target, size, multiplier,
     accountSize, maxRiskPerTradePct: maxRisk, maxPortfolioHeatPct: maxHeat,
     maxConcurrentPositions: maxPos, rrMin, existingHeatPct, openCount: (positions || []).length,
     thesis: form.thesis, alignment: form.alignment, leanDirection: lean,
     events, eventWarnHours,
-  }), [form, entry, stop, target, size, multiplier, accountSize, maxRisk, maxHeat, maxPos, rrMin, existingHeatPct, positions, lean, events, eventWarnHours])
+    requireThesis: true, atr: disc.atr, stopAtrMinMultiple, technicals: disc.technicals,
+    recentClosedSameSymbol: disc.recentClosedSameSymbol, openSameSymbol: disc.openSameSymbol,
+    budgetCaps: caps, budgetUsed,
+  }), [form, entry, stop, target, size, multiplier, accountSize, maxRisk, maxHeat, maxPos, rrMin, existingHeatPct, positions, lean, events, eventWarnHours, disc, stopAtrMinMultiple, caps, budgetUsed])
 
   const m = gate.metrics
   const warnCount = gate.warnings.filter((w) => w.severity === 'warn').length
+  const blockCount = gate.warnings.filter((w) => w.severity === 'block').length
 
   function calcSize() {
     const s = positionSize(accountSize, Number(form.riskPct) || maxRisk, entry, stop, multiplier)
@@ -88,27 +113,38 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
   async function onConfirm(e, paper = false) {
     e.preventDefault()
     if (!form.symbol) return setStatus({ type: 'error', msg: 'Scegli uno strumento.' })
-    if (!(size > 0)) return setStatus({ type: 'error', msg: 'Size deve essere > 0.' })
     if (!(entry > 0)) return setStatus({ type: 'error', msg: 'Entry deve essere > 0.' })
+    // STOP mandatory — applies to real AND paper (no sizing/registration without it).
+    if (stop == null) return setStatus({ type: 'error', msg: 'Stop loss obbligatorio: senza stop non si registra.' })
+    if (!(size > 0)) return setStatus({ type: 'error', msg: 'Size deve essere > 0.' })
     if (!paper && !form.thesis.trim()) return setStatus({ type: 'error', msg: 'La tesi è obbligatoria.' })
+    // Budget caps in 'block' mode stop a REAL registration (still no order — the
+    // cockpit is read-only; this is YOUR guardrail). Paper is exempt (counted apart).
+    if (!paper) {
+      const blocker = gate.warnings.find((w) => w.severity === 'block' && w.code !== 'stop_missing')
+      if (blocker) return setStatus({ type: 'error', msg: `Bloccato dalla tua regola: ${blocker.message}` })
+    }
 
     setSaving(true); setStatus(null)
+    // Warnings the user is proceeding past — recorded for the honest review.
+    const ignored = gate.warnings.filter((w) => w.severity !== 'info').map((w) => w.code)
     const inst = instruments.find((i) => i.symbol === form.symbol)
     const posPayload = {
       instrument_id: inst?.id ?? null, symbol: form.symbol, side: form.side,
       size, entry, stop, target, deadline: form.deadline || null,
       broker: paper ? 'TEST' : (form.broker || null), thesis: form.thesis, status: 'open',
-      paper, entry_conditions: paper ? { lean_direction: lean, alignment: form.alignment, captured_at: new Date().toISOString() } : null,
+      paper, entry_conditions: paper ? { lean_direction: lean, alignment: form.alignment, warnings: ignored, captured_at: new Date().toISOString() } : null,
     }
     const { data: pos, error } = await insertPosition(posPayload)
     if (error) { setSaving(false); return setStatus({ type: 'error', msg: error.message }) }
 
     // Auto-create a linked journal draft (read-only: registration only).
     const align = { aligned: 'allineato alla marea macro', contrarian: 'contrarian (contro la marea)' }[form.alignment] || 'n.d.'
+    const warnNote = ignored.length ? ` · Warning al momento dell'apertura: ${ignored.join(', ')}` : ''
     const draft = {
       position_id: pos?.id ?? null, symbol: form.symbol, thesis: form.thesis,
       entry_price: entry, stop, size,
-      notes: `${paper ? 'TEST · ' : ''}${form.side} · Allineamento macro: ${align}${lean ? ` (lean: ${lean})` : ''}`,
+      notes: `${paper ? 'TEST · ' : ''}${form.side} · Allineamento macro: ${align}${lean ? ` (lean: ${lean})` : ''}${warnNote}`,
       reviewed: false, entry_date: todayISO(),
     }
     const j = await insertJournalEntry(draft)
@@ -124,8 +160,10 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
     <section className="panel">
       <header className="panel-head">
         <h2>Nuovo trade — checklist</h2>
-        <span className="muted small">valida i numeri contro le tue regole · nessun ordine</span>
+        <span className="muted small">valida disciplina e rischio · nessun ordine</span>
       </header>
+
+      <BudgetStrip caps={caps} used={budgetUsed} setAside={setAside} />
 
       <form className="pos-form" onSubmit={onConfirm}>
         <label>Strumento
@@ -146,8 +184,11 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
         <label>Entry
           <input type="number" step="any" value={form.entry} onChange={(e) => set('entry', e.target.value)} />
         </label>
-        <label><span className="field-label">Stop <InfoTip text={RH.risk_per_trade.text} label={RH.risk_per_trade.label} /></span>
+        <label><span className="field-label">Stop (obbligatorio) <InfoTip text={RH.risk_per_trade.text} label={RH.risk_per_trade.label} /></span>
           <input type="number" step="any" value={form.stop} onChange={(e) => set('stop', e.target.value)} />
+          {m.atr != null && entry > 0 && (
+            <span className="muted small">ATR {fmtNum(m.atr, 2)} · stop consigliato ≥ {fmtNum(m.suggestedStopDistance, 2)} dal prezzo (dai spazio al movimento)</span>
+          )}
         </label>
         <label>Target
           <input type="number" step="any" value={form.target} onChange={(e) => set('target', e.target.value)} />
@@ -195,25 +236,16 @@ export default function TradeGate({ instruments, settings, positions, priceBySym
         <p className="muted small">⚠ Point value ×1: il rischio per {form.symbol} è calcolato come 1 unità = 1 (corretto per azioni/crypto; per future/CFD imposta <code>contract_multiplier</code> in config, altrimenti il rischio è sottostimato).</p>
       )}
 
-      {/* Warnings — colour = severity only, non-blocking */}
-      <div className="gate-warnings">
-        {gate.warnings.length === 0 && form.symbol && (size > 0) && (
-          <p className="gate-ok">Nessun warning: i numeri rientrano nelle tue regole. (Non è un giudizio sulla direzione.)</p>
-        )}
-        {gate.warnings.map((w) => (
-          <p key={w.code} className={`gate-line gate-${w.severity}`}>
-            <span className="gate-tag">{w.severity === 'warn' ? '⚠ warning' : 'ℹ nota'}</span> {w.message}
-          </p>
-        ))}
-      </div>
+      {/* Warnings — colour = severity only; only stop/budget-block are blocking */}
+      <GateWarnings warnings={form.symbol && (size > 0) ? gate.warnings : gate.warnings.filter((w) => w.severity !== 'info')} okWhenEmpty={!!form.symbol && size > 0} />
 
       <p className="muted small caveat">{GATE_CAVEAT}</p>
 
       <div className="form-actions">
-        <button type="button" className="primary" onClick={(e) => onConfirm(e, false)} disabled={saving}>
-          {saving ? 'Salvo…' : `Conferma e registra${warnCount ? ` (${warnCount} warning)` : ''}`}
+        <button type="button" className="primary" onClick={(e) => onConfirm(e, false)} disabled={saving || blockCount > 0}>
+          {saving ? 'Salvo…' : blockCount > 0 ? `Bloccato (${blockCount})` : `Conferma e registra${warnCount ? ` (${warnCount} warning)` : ''}`}
         </button>
-        <button type="button" className="ghost" onClick={(e) => onConfirm(e, true)} disabled={saving}
+        <button type="button" className="ghost" onClick={(e) => onConfirm(e, true)} disabled={saving || stop == null}
           title="Apre una posizione ipotetica monitorata — nessun ordine">
           🧪 Monitora come test
         </button>

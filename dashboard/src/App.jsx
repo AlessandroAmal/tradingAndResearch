@@ -35,6 +35,7 @@ export default function App() {
   const [watch, setWatch] = useState([]) // instruments + last/changePct
   const [events, setEvents] = useState([])
   const [positions, setPositions] = useState([])
+  const [closedPositions, setClosedPositions] = useState([])
   const [riskSettings, setRiskSettings] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -94,6 +95,11 @@ export default function App() {
     if (pos.error) nextErrors.positions = pos.error.message
     setPositions(pos.data || [])
 
+    // Recently closed positions power the set-aside tracker + the "re-entered a
+    // losing direction" guard (both read realized_pnl stamped at close).
+    const closed = await fetchPositions('closed')
+    setClosedPositions(closed.data || [])
+
     const rs = await fetchRiskSettings()
     if (rs.error) nextErrors.risk = rs.error.message
     setRiskSettings(rs.data || null)
@@ -144,6 +150,8 @@ export default function App() {
   // Paper (test) positions are separate from real risk: they NEVER count in heat.
   const realPositions = useMemo(() => positions.filter((p) => !p.paper), [positions])
   const paperPositions = useMemo(() => positions.filter((p) => p.paper), [positions])
+  // Recently closed (real + paper) — the discipline guards look at both.
+  const recentClosed = useMemo(() => closedPositions || [], [closedPositions])
 
   const navItem = (key, label) => (
     <button
@@ -273,6 +281,7 @@ export default function App() {
                     instruments={instruments}
                     settings={riskSettings}
                     positions={realPositions}
+                    closedPositions={recentClosed}
                     priceBySymbol={priceBySymbol}
                     multiplierBySymbol={multiplierBySymbol}
                     events={events}
@@ -324,6 +333,10 @@ export default function App() {
               initialSymbol={decisionSymbol}
               instruments={instruments}
               settings={riskSettings}
+              positions={realPositions}
+              closedPositions={recentClosed}
+              events={events}
+              priceBySymbol={priceBySymbol}
               multiplierBySymbol={multiplierBySymbol}
               onSaved={loadAll}
             />

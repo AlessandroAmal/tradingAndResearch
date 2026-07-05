@@ -109,3 +109,81 @@ def test_gate_never_blocks():
     assert len(res["warnings"]) >= 3
     assert res["has_blocking_warnings"] is False   # read-only: warns, never blocks
     assert "non" in res["caveat"].lower()
+
+
+# =====================================================================
+# Discipline guards (opt-in; the base tests above prove they stay silent
+# when their inputs are not supplied).
+# =====================================================================
+def test_stop_missing_blocks():
+    res = evaluate_gate(**{**BASE, "stop": None})
+    codes = {(w["code"], w["severity"]) for w in res["warnings"]}
+    assert ("stop_missing", "block") in codes
+    assert res["has_blocking_warnings"] is True
+
+
+def test_stop_too_tight_vs_atr_warns():
+    # stop distance = 10; ATR=8, k=1.5 -> floor 12 -> 10 < 12 -> warn.
+    res = evaluate_gate(**{**BASE, "atr": 8.0, "stop_atr_min_multiple": 1.5})
+    assert "stop_too_tight" in _codes(res)
+    # wider stop clears the floor -> no warning.
+    ok = evaluate_gate(**{**BASE, "stop": 1980.0, "atr": 8.0, "stop_atr_min_multiple": 1.5})
+    assert "stop_too_tight" not in _codes(ok)
+
+
+def test_countertrend_short_in_uptrend_warns_and_cites_rule():
+    tech = {"ma": [{"period": 200, "above": True}, {"period": 50, "above": True}]}
+    res = evaluate_gate(**{**BASE, "side": "short", "technicals": tech})
+    assert "countertrend" in _codes(res)
+    msg = next(w["message"] for w in res["warnings"] if w["code"] == "countertrend")
+    assert "2500" in msg and "ribasso" in msg.lower()
+    # long in the SAME uptrend -> no countertrend warning.
+    ok = evaluate_gate(**{**BASE, "side": "long", "technicals": tech})
+    assert "countertrend" not in _codes(ok)
+
+
+def test_countertrend_long_in_downtrend_warns():
+    tech = {"ma": [{"period": 200, "above": False}, {"period": 50, "above": False}]}
+    assert "countertrend" in _codes(evaluate_gate(**{**BASE, "side": "long", "technicals": tech}))
+    assert "countertrend" not in _codes(evaluate_gate(**{**BASE, "side": "short", "technicals": tech}))
+
+
+def test_reentry_same_losing_direction_warns():
+    closed = [{"side": "long", "pnl": -500.0}, {"side": "short", "pnl": -800.0}]
+    res = evaluate_gate(**{**BASE, "side": "long", "recent_closed_same_symbol": closed})
+    assert "reentry_losing" in _codes(res)
+    # opposite side of the loss -> no warning (the short loss doesn't trigger a long).
+    ok = evaluate_gate(**{**BASE, "side": "long", "recent_closed_same_symbol": [{"side": "short", "pnl": -800.0}]})
+    assert "reentry_losing" not in _codes(ok)
+
+
+def test_adding_to_open_loser_warns():
+    opens = [{"side": "long", "pnl": -300.0}]
+    assert "adding_to_loser" in _codes(evaluate_gate(**{**BASE, "side": "long", "open_same_symbol": opens}))
+    # a winning open position in the same dir does not trigger it.
+    assert "adding_to_loser" not in _codes(evaluate_gate(**{**BASE, "side": "long", "open_same_symbol": [{"side": "long", "pnl": 200.0}]}))
+
+
+def test_thesis_required_only_when_requested():
+    assert "thesis_missing" not in _codes(evaluate_gate(**BASE))                    # opt-in off
+    assert "thesis_missing" in _codes(evaluate_gate(**{**BASE, "require_thesis": True}))
+    assert "thesis_missing" not in _codes(evaluate_gate(**{**BASE, "require_thesis": True, "thesis": "rates rolling over"}))
+
+
+def test_budget_cap_warns_and_blocks():
+    caps = {"day": {"max": 1500, "mode": "warn"}}
+    used = {"day": 800.0}   # +1000 new = 1800 > 1500 -> warn
+    res = evaluate_gate(**{**BASE, "budget_caps": caps, "budget_used": used})
+    assert "budget_day" in _codes(res) and res["has_blocking_warnings"] is False
+    # block mode -> blocking
+    blocked = evaluate_gate(**{**BASE, "budget_caps": {"day": {"max": 1500, "mode": "block"}}, "budget_used": used})
+    assert blocked["has_blocking_warnings"] is True
+    # under the cap -> silent
+    ok = evaluate_gate(**{**BASE, "budget_caps": caps, "budget_used": {"day": 100.0}})
+    assert "budget_day" not in _codes(ok)
+
+
+def test_journal_draft_records_ignored_warnings():
+    tech = {"ma": [{"period": 200, "above": True}, {"period": 50, "above": True}]}
+    res = evaluate_gate(**{**BASE, "side": "short", "technicals": tech, "thesis": "x"})
+    assert "countertrend" in res["journal_draft"]["notes"]

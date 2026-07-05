@@ -108,6 +108,39 @@ class AppConfig:
     def event_warn_hours(self) -> int:
         return int(self.risk.get("event_warn_hours", 48))
 
+    # --- discipline gate (budget caps, ATR room, set-aside) --------
+    @property
+    def budget_day(self) -> float:
+        return float(self.risk.get("budget_day", 100.0))
+
+    @property
+    def budget_week(self) -> float:
+        return float(self.risk.get("budget_week", 175.0))
+
+    @property
+    def budget_month(self) -> float:
+        return float(self.risk.get("budget_month", 300.0))
+
+    @property
+    def budget_day_mode(self) -> str:
+        return str(self.risk.get("budget_day_mode", "warn"))
+
+    @property
+    def budget_week_mode(self) -> str:
+        return str(self.risk.get("budget_week_mode", "warn"))
+
+    @property
+    def budget_month_mode(self) -> str:
+        return str(self.risk.get("budget_month_mode", "warn"))
+
+    @property
+    def stop_atr_min_multiple(self) -> float:
+        return float(self.risk.get("stop_atr_min_multiple", 1.5))
+
+    @property
+    def set_aside_per_day(self) -> float:
+        return float(self.risk.get("set_aside_per_day", 100.0))
+
     # --- options desk (M5) -----------------------------------------
     @property
     def options_cron(self) -> str:

@@ -46,10 +46,19 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
                 "deadline_warn_days": cfg.deadline_warn_days,
                 "rr_min": cfg.rr_min,
                 "event_warn_hours": cfg.event_warn_hours,
+                # discipline gate (0016) — config.yaml is the source of truth
+                "budget_day": cfg.budget_day,
+                "budget_week": cfg.budget_week,
+                "budget_month": cfg.budget_month,
+                "budget_day_mode": cfg.budget_day_mode,
+                "budget_week_mode": cfg.budget_week_mode,
+                "budget_month_mode": cfg.budget_month_mode,
+                "stop_atr_min_multiple": cfg.stop_atr_min_multiple,
+                "set_aside_per_day": cfg.set_aside_per_day,
             }
         )
-    except Exception as exc:  # noqa: BLE001 — older DB without 0007; don't block seed
-        log.warning("Could not seed risk_settings (apply migration 0007?): %s", exc)
+    except Exception as exc:  # noqa: BLE001 — older DB without 0007/0016; don't block seed
+        log.warning("Could not seed risk_settings (apply migrations 0007+0016?): %s", exc)
 
     # Standing alert rules (M8): one toggleable row per category. Existing
     # rows (and the user's enabled toggle) are preserved.
