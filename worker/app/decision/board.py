@@ -464,6 +464,13 @@ def run_decision_board(
                 _resolve_macro_driver(storage, drv, macro_days, regime_cfg)
                 for drv in inst.get("macro_drivers", [])
             ]
+            # Macro freshness: flag drivers whose last FRED obs is stale (feed lag).
+            from .attribution import macro_freshness
+            freshness = macro_freshness(
+                drivers, today,
+                int(macro_cfg.get("stale_after_business_days", 2)),
+            )
+            drivers = freshness["drivers"]   # annotated with as_of_date / stale / age
 
             proxy = inst.get("options_proxy") or symbol
             implied = implied_probabilities(
@@ -516,6 +523,54 @@ def run_decision_board(
                 fx=fx,
             )
 
+            # Event context (honest, never fused into the lean): what moved the
+            # recent move, an imminent-event banner, and a dollar co-movement note.
+            from .attribution import attribute_movement, dollar_note, event_risk_banner
+            now_dt = datetime.now(timezone.utc)
+            recent_return_pct = None
+            if len(closes) >= 3:
+                recent_return_pct = (closes[-1] / closes[-3] - 1.0) * 100.0
+            attrib_days = int(db_cfg.get("attribution_lookback_days", 5))
+            try:
+                recent_events = _filter_events(
+                    storage.list_recent_events(attrib_days, 25),
+                    list(inst.get("event_keywords", [])), symbol, 4)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Recent events load failed for %s: %s", symbol, exc)
+                recent_events = []
+            attrib_news = stock_news_items
+            if attrib_news is None:
+                try:
+                    from .stock_news import recent_news
+                    attrib_news = recent_news(inst.get("name", symbol), symbol,
+                                              days=attrib_days, limit=5)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Attribution news failed for %s: %s", symbol, exc)
+                    attrib_news = []
+            attribution = attribute_movement(
+                instrument_name=inst.get("name", symbol),
+                recent_return_pct=recent_return_pct,
+                news=attrib_news or [], past_events=recent_events, drivers=drivers,
+                dollar_sensitivity=inst.get("dollar_sensitivity"),
+            )
+            event_risk = event_risk_banner(
+                events, implied, symbol=symbol, now=now_dt,
+                within_hours=float(db_cfg.get("event_risk_hours", 72)))
+            dollar = dollar_note(drivers, inst.get("dollar_sensitivity"))
+
+            # Full-picture (single stocks): ALL states side by side, NEVER fused.
+            full_picture = None
+            if fundamentals:
+                try:
+                    from .full_picture import build_full_picture
+                    nd = (((fundamentals.get("earnings") or {}).get("next_date")) or None)
+                    d2e = (date.fromisoformat(nd) - today).days if nd else None
+                    full_picture = build_full_picture(
+                        fundamentals, synthesis, technicals, implied,
+                        days_to_next_earnings=d2e)
+                except Exception as exc:  # noqa: BLE001 — display aid only
+                    log.warning("Full picture failed for %s: %s", symbol, exc)
+
             board = {
                 "symbol": symbol,
                 "name": inst.get("name", symbol),
@@ -532,6 +587,11 @@ def run_decision_board(
                 "fx_signals": fx,
                 "fundamentals": fundamentals,
                 "news": stock_news_items,
+                "full_picture": full_picture,
+                "macro_freshness": {k: v for k, v in freshness.items() if k != "drivers"},
+                "attribution": attribution,
+                "event_risk": event_risk,
+                "dollar_note": dollar,
             }
 
             # Optional NON-directional AI synthesis.

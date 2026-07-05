@@ -59,6 +59,16 @@ LEAN_DISCLAIMER = (
     "previsione. Non è una percentuale di salita/discesa."
 )
 
+LEAN_TECH_CAVEAT = (
+    "Scomposizione delle sole condizioni. I fattori tecnici sono contesto DEBOLE e "
+    "possono spingere il lean nella direzione OPPOSTA al trend — NON è un segnale di "
+    "inversione."
+)
+
+# Factors that read "the move is extended" (mean-reversion / stretch). When these
+# DOMINATE a lean that opposes the recent trend, that is the gambler's fallacy.
+_EXTENSION_FACTORS = {"rsi"}
+
 
 def _score_of(classification: str) -> int:
     return {BULLISH: 1, BEARISH: -1}.get(classification, 0)
@@ -293,6 +303,43 @@ def _label(score: float | None) -> tuple[str, str]:
     return f"fortemente {word}", direction
 
 
+# --- mean-reversion trap detector (the gambler's-fallacy guard) ------
+def _mean_reversion_flag(factors: list[dict], technicals: Mapping, direction: str) -> dict | None:
+    """Fire ONLY when a lean that OPPOSES the recent price trend is driven mainly
+    by extension/mean-reversion factors (e.g. RSI high after a rally). Honest: if
+    the counter-trend lean is really macro-driven, this stays silent."""
+    contribs = [f for f in factors if f.get("contribution") is not None]
+    if not contribs or direction == NEUTRAL:
+        return None
+    sk = (technicals or {}).get("streak", {})
+    recent_up = sk.get("direction") == "up" and (sk.get("length") or 0) >= 1
+    recent_down = sk.get("direction") == "down" and (sk.get("length") or 0) >= 1
+    lean_opposes = (recent_up and direction == BEARISH) or (recent_down and direction == BULLISH)
+    if not lean_opposes:
+        return None
+    # Factors pulling the SAME way as the (counter-trend) lean.
+    opposing = [f for f in contribs
+                if (recent_up and f["contribution"] < 0) or (recent_down and f["contribution"] > 0)]
+    opp_mag = sum(abs(f["contribution"]) for f in opposing)
+    ext = [f for f in opposing if f["key"] in _EXTENSION_FACTORS]
+    ext_mag = sum(abs(f["contribution"]) for f in ext)
+    if opp_mag <= 0 or (ext_mag / opp_mag) < 0.5:
+        return None
+    move_word = "rialzo" if recent_up else "ribasso"
+    lean_word = "ribassista" if direction == BEARISH else "rialzista"
+    side = "short-the-strength" if recent_up else "long-the-weakness"
+    return {
+        "dominant": [f["key"] for f in ext],
+        "share": round(ext_mag / opp_mag, 2),
+        "message": (
+            f"Gran parte di questa lettura {lean_word} viene da «movimento esteso / RSI». "
+            f"ATTENZIONE: un movimento esteso spesso CONTINUA (trend), non si inverte. "
+            f"«Più {lean_word} dopo un {move_word}» è la fallacia dello scommettitore — è lo "
+            f"{side}. Regola tua 2.1 (oro, -2500€)."
+        ),
+    }
+
+
 # --- market comparison (vs option-implied odds) ----------------------
 def _market_lean(implied: Mapping | None) -> dict:
     """Reduce the implied probabilities to a coarse market lean for comparison.
@@ -373,10 +420,21 @@ def confluence_read(
     if total_w > 0:
         raw = sum(_score_of(f["classification"]) * f["weight"] for f in contributing)
         score = round(100.0 * raw / total_w, 1)
+        # Expose each factor's SIGNED contribution to the lean (same -100..100
+        # scale) so the UI can make it obvious what drives the reading.
+        for f in contributing:
+            f["contribution"] = round(100.0 * _score_of(f["classification"]) * f["weight"] / total_w, 1)
 
     label, direction = _label(score)
     excluded = [f["key"] for f in factors if not f["included"]]
     market = _market_lean(implied)
+
+    # Top drivers of the lean (by |contribution|) + the mean-reversion guard.
+    ranked = sorted((f for f in contributing if f.get("contribution")),
+                    key=lambda f: abs(f["contribution"]), reverse=True)
+    top_drivers = [{"key": f["key"], "label": f["label"], "contribution": f["contribution"]}
+                   for f in ranked[:3]]
+    mean_reversion = _mean_reversion_flag(factors, technicals or {}, direction)
 
     return {
         "lean": {
@@ -384,11 +442,14 @@ def confluence_read(
             "label": label,
             "direction": direction,
             "contributing_factors": len(contributing),
+            "top_drivers": top_drivers,
             "disclaimer": LEAN_DISCLAIMER,
+            "tech_caveat": LEAN_TECH_CAVEAT,
         },
         "factors": factors,
         "excluded": excluded,
         "market": market,                   # coarse lean derived from the implied odds
         "divergence": _divergence(direction, market),
+        "mean_reversion": mean_reversion,   # the gambler's-fallacy warning, or None
         "caveats": CAVEATS,
     }

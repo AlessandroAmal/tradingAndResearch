@@ -433,6 +433,29 @@ input[type="number"] { font-family: var(--mono); }
 .conf-state.conf-watch    { color: var(--warn); background: var(--warn-bg); }
 .conf-state.conf-neutral  { color: var(--muted); background: var(--surface-2); }
 
+/* Quadro completo — all factor states side by side; colour = state only, NOT a
+   fused score. The implied odds bar above is the only integrated number. */
+.fullpic .fp-odds { margin-bottom: 12px; }
+.fp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.fp-cell {
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left-width: 3px; border-radius: var(--r-sm); padding: 8px 10px;
+}
+.fp-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.fp-state { font-size: var(--fs-md); font-weight: 700; }
+.fp-value { line-height: 1.35; }
+/* tone = descriptive state only (good/bad/watch/neutral/none); never a call */
+.fp-cell.tone-good    { border-left-color: var(--pos); }
+.fp-cell.tone-good .fp-state    { color: var(--pos); }
+.fp-cell.tone-bad     { border-left-color: var(--neg); }
+.fp-cell.tone-bad .fp-state     { color: var(--neg); }
+.fp-cell.tone-watch   { border-left-color: var(--warn); }
+.fp-cell.tone-watch .fp-state   { color: var(--warn); }
+.fp-cell.tone-neutral { border-left-color: var(--line-strong); }
+.fp-cell.tone-none    { border-left-color: var(--line-strong); }
+.val-indicator { margin: 4px 0 10px; }
+
 .br-head { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 /* honesty banner — the "n insufficiente / mai accaduto" message must stand out */
 .honest-note {
@@ -500,9 +523,37 @@ ul.tight li { margin: 2px 0; }
   border: 1px solid var(--line); }
 .gate-line .gate-tag { font-weight: 700; text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: 0.03em; }
 .gate-warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.gate-block { color: var(--neg); background: var(--neg-bg); border-color: var(--neg); font-weight: 600; }
 .gate-info { color: var(--text-dim); background: var(--surface-2); }
 .gate-ok { margin: 6px 0; padding: 7px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm);
   color: var(--pos); background: var(--pos-bg); border: 1px solid var(--pos); }
+
+/* budget strip — committed real risk per window vs your caps */
+.budget-strip { margin: 4px 0 10px; padding: 8px 10px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-sm); }
+.budget-strip .stat-grid { margin-bottom: 4px; }
+
+/* event-risk banner — structural, top of board; colour = state only */
+.event-risk-banner { border-left: 3px solid var(--warn); }
+.erb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.erb-tag { font-weight: 700; text-transform: uppercase; font-size: var(--fs-xs);
+  letter-spacing: 0.03em; color: var(--warn); }
+/* "cosa ha mosso questo" — explanatory chain of the move already happened */
+.attrib-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 10px; }
+.attrib-step { background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 3px 10px; font-size: var(--fs-sm); }
+.attrib-arrow { margin-left: 6px; color: var(--muted); }
+.attrib-kind { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); }
+.attrib-event { color: var(--warn); background: var(--warn-bg); }
+.attrib-news { color: var(--text-dim); }
+/* mean-reversion (gambler's fallacy) warning — must stand out */
+.mean-rev-warning { display: flex; flex-direction: column; gap: 4px; margin: 10px 0;
+  padding: 9px 11px; border-radius: var(--r-sm); font-size: var(--fs-sm);
+  color: var(--neg); background: var(--neg-bg); border: 1px solid var(--neg); }
+.mean-rev-warning .gate-tag { font-weight: 700; text-transform: uppercase;
+  font-size: var(--fs-xs); letter-spacing: 0.03em; }
+.stale-badge { color: var(--warn); font-weight: 600; }
 
 .briefing-actions { display: flex; align-items: center; gap: 8px; }
 

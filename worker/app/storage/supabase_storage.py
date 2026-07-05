@@ -383,6 +383,23 @@ class SupabaseStorage:
             or []
         )
 
+    def list_recent_events(self, days: int, limit: int) -> list[dict[str, Any]]:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        start = (now - timedelta(days=days)).isoformat()
+        return (
+            self._client.table("events")
+            .select("title, event_time, importance, category, symbols")
+            .gte("event_time", start)
+            .lt("event_time", now.isoformat())
+            .order("event_time", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+
     # --- briefings ------------------------------------------------
     def insert_briefing(self, briefing: dict[str, Any]) -> dict[str, Any]:
         res = self._client.table("briefings").insert(briefing).execute()

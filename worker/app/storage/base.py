@@ -179,6 +179,10 @@ class Storage(Protocol):
         """Return upcoming calendar events (event_time >= now)."""
         ...
 
+    def list_recent_events(self, days: int, limit: int) -> list[dict[str, Any]]:
+        """Return recently PASSED calendar events (now-days <= event_time < now)."""
+        ...
+
     # --- briefings (AI output) ------------------------------------
     def insert_briefing(self, briefing: dict[str, Any]) -> dict[str, Any]:
         ...

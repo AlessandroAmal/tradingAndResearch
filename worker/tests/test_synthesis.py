@@ -194,3 +194,53 @@ def test_divergence_aligned_message():
                         implied=_implied(0.70), next_event=None, weights={"trend_ma": 1.0})
     assert r["market"]["direction"] == BULLISH
     assert r["divergence"]["level"] == "aligned"
+
+
+# =====================================================================
+# Mean-reversion trap detector (the gambler's-fallacy guard) + contributions.
+# =====================================================================
+def test_factors_expose_signed_contribution():
+    r = confluence_read(drivers=_drivers("headwind", "headwind"), technicals=_tech(),
+                        implied=None, next_event=None, weights={"trend_ma": 1.0})
+    contribs = {f["key"]: f.get("contribution") for f in r["factors"] if f.get("contribution") is not None}
+    assert contribs and all(isinstance(v, (int, float)) for v in contribs.values())
+    # top drivers ranked by |contribution|
+    assert r["lean"]["top_drivers"] and abs(r["lean"]["top_drivers"][0]["contribution"]) > 0
+
+
+def test_mean_reversion_fires_when_extension_drives_countertrend_lean():
+    # Price rallied (streak UP) but the ONLY weighted directional factor is RSI
+    # overbought -> bearish. That bearish-after-a-rally lean is the fallacy.
+    tech = {
+        "ma": [{"period": 200, "above": True, "rising": True}, {"period": 50, "above": True, "rising": True}],
+        "rsi": {"value": 85, "zone": "overbought", "overbought": 80, "oversold": 40},
+        "streak": {"direction": "up", "length": 3},
+    }
+    r = confluence_read(drivers=[], technicals=tech, implied=None, next_event=None,
+                        weights={"trend_ma": 0.0, "rsi": 1.0})   # only RSI feeds the lean
+    assert r["lean"]["direction"] == "bearish"
+    mr = r["mean_reversion"]
+    assert mr is not None and "rsi" in mr["dominant"]
+    assert "fallacia dello scommettitore" in mr["message"] and "2.1" in mr["message"]
+    # no fabricated directional probability field is ever emitted on the lean
+    assert "prob_up" not in r["lean"] and "prob" not in mr
+
+
+def test_mean_reversion_silent_when_lean_is_macro_driven():
+    # Same rally, but the bearish lean comes from a MACRO driver (not extension).
+    macro = [{"id": "DFII10", "label": "Real yield", "value": 2.5, "direction": "up",
+              "classification": "bearish", "state": "headwind", "interpretation": "x", "weight": 1.0}]
+    tech = {
+        "ma": [{"period": 200, "above": True, "rising": True}, {"period": 50, "above": True, "rising": True}],
+        "rsi": {"value": 85, "zone": "overbought", "overbought": 80, "oversold": 40},  # weight 0 -> context
+        "streak": {"direction": "up", "length": 3},
+    }
+    r = confluence_read(drivers=macro, technicals=tech, implied=None, next_event=None,
+                        weights={"trend_ma": 0.0, "rsi": 0.0})
+    assert r["lean"]["direction"] == "bearish"
+    assert r["mean_reversion"] is None      # honest: it's macro, not the fallacy
+
+
+def test_lean_carries_weak_technical_caveat():
+    r = confluence_read(drivers=[], technicals=_tech(), implied=None, next_event=None, weights={})
+    assert "inversione" in r["lean"]["tech_caveat"].lower()

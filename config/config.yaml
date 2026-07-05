@@ -41,6 +41,22 @@ risk:
   # Pre-trade gate: warn if a HIGH-impact event falls within this many hours.
   event_warn_hours: 48
 
+  # --- Discipline gate (all read-only warnings, never orders) ---------
+  # Budget caps: max committed RISK (currency, base_currency) per window. A new
+  # trade that would push a window over its cap raises a warning (or blocks, if
+  # that window's mode is 'block'). Paper positions are shown but counted apart.
+  budget_day: 100
+  budget_week: 175
+  budget_month: 300
+  budget_day_mode: warn        # warn | block
+  budget_week_mode: warn
+  budget_month_mode: warn
+  # Sizing that gives room: warn if the stop distance is tighter than this × ATR
+  # (inside normal noise -> premature-stop risk).
+  stop_atr_min_multiple: 1.5
+  # Profit set-aside reminder (tracking only — no money moves): target per day.
+  set_aside_per_day: 100
+
 # --- Trading universe (watchlist) — brief §4 ------------------------
 # `symbol` is the yfinance ticker. `sleeve` groups instruments
 # (macro|equity|commodity|energy|gauge). `tradeable_on` is informational.
@@ -395,12 +411,22 @@ decision_board:
       high_pct: 0.66           # level at/above this percentile = "high" regime
       low_pct: 0.34            # level at/below this percentile = "low" regime
       use_regime: true         # false = classify by daily direction only (legacy)
+    # A driver whose last FRED observation is older than this many BUSINESS days
+    # vs "today" is flagged "dato ritardato" (FRED publishes with a lag; a recent
+    # event may not be reflected yet). Honest: we never estimate a missing value.
+    stale_after_business_days: 2
     # Derived series computed from FRED components and stored in macro_series like
     # any other (drivers reference them by id). EUR/USD's main driver is the
     # Fed–ECB policy-rate differential = Fed funds target upper (DFEDTARU) minus
     # ECB deposit facility rate (ECBDFR). Both verified daily FRED series.
     derived:
       - { id: "FED_ECB_SPREAD", op: subtract, left: "DFEDTARU", right: "ECBDFR" }
+  # Structural event-risk banner: a HIGH-impact event for the instrument within
+  # this many hours surfaces a fixed banner at the top of the board.
+  event_risk_hours: 72
+  # "Cosa ha mosso questo": how many days back to look for catalysts (news + just
+  # -passed calendar events) that explain the RECENT move (never the next one).
+  attribution_lookback_days: 5
   base_rate:
     horizons: [1, 3, 5]        # trading days ahead for the historical distribution
     min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)
@@ -408,6 +434,9 @@ decision_board:
     - symbol: "GC=F"
       name: "Gold"
       options_proxy: "GLD"     # yfinance options proxy for the implied probabilities
+      # Dollar co-movement: gold is priced in USD -> inverse to the dollar. A
+      # headline that moves the dollar tends to move gold AND EUR/USD together.
+      dollar_sensitivity: inverse
       implied_horizons_days: [1, 3, 30]   # ~1 day / ~3 days / ~1 month
       # RSI band tuned for gold (a trending market keeps RSI stretched) — NOT 70/30.
       rsi: { period: 14, overbought: 80, oversold: 40 }
@@ -433,6 +462,7 @@ decision_board:
     - symbol: "EURUSD=X"
       name: "EUR/USD"
       options_proxy: "FXE"       # ETF euro USA con opzioni (liquidità sottile -> prob. implicite da leggere con cautela)
+      dollar_sensitivity: inverse   # EUR/USD sale quando il dollaro scende (co-muove con l'oro)
       implied_horizons_days: [1, 3, 30]
       rsi: { period: 14, overbought: 70, oversold: 30 }   # STANDARD (EUR/USD poco volatile), non 80/40 dell'oro
       range_window: 60

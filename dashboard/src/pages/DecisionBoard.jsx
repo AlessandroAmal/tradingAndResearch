@@ -12,7 +12,7 @@ import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH } from '../data/guide'
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
 // Snapshots are produced by `python -m app.main decision` (worker).
-export default function DecisionBoard({ initialSymbol = null, instruments, settings, multiplierBySymbol, onSaved }) {
+export default function DecisionBoard({ initialSymbol = null, instruments, settings, positions, closedPositions, events, priceBySymbol, multiplierBySymbol, onSaved }) {
   const [symbols, setSymbols] = useState([])
   const [symbol, setSymbol] = useState(initialSymbol || '')
   const [board, setBoard] = useState(null)
@@ -99,15 +99,29 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
             instruments={instruments}
             settings={settings}
             multiplier={multiplierBySymbol?.[symbol] ?? 1}
+            multiplierBySymbol={multiplierBySymbol}
+            board={board}
+            positions={positions}
+            closedPositions={closedPositions}
+            events={events}
+            priceBySymbol={priceBySymbol}
             conditions={conditionsFromBoard(board)}
             onSaved={onSaved}
           />
         )}
       </section>
 
+      {/* Structural event context — shown for ALL instruments, above the board.
+          Events go WHERE THEY ARE REAL, never fused into the confluence lean. */}
+      {board && <EventRiskBanner er={board.event_risk} nowMs={nowMs} />}
+      {board && <MacroFreshnessBanner mf={board.macro_freshness} />}
+      {board && <AttributionBlock a={board.attribution} nowMs={nowMs} />}
+      {board && <DollarNote note={board.dollar_note} />}
+
       {board && board.fundamentals && (
         // SINGLE STOCK: company first (fundamentals/earnings/news), macro demoted.
         <>
+          <FullPicturePanel fp={board.full_picture} />
           <FundamentalsPanel f={board.fundamentals} />
           <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
           <StockNewsPanel news={board.news} nowMs={nowMs} />
@@ -119,7 +133,7 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
           <details className="panel macro-demote">
             <summary>Tecnica & lettura macro (contesto secondario)</summary>
             <p className="muted small">Per un titolo singolo i driver macro sono sfondo: conta soprattutto l’azienda e la notizia.</p>
-            <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
+            <SynthesisSection synthesis={board.synthesis} implied={board.implied} singleStock />
             <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
             <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
           </details>
@@ -142,12 +156,93 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
   )
 }
 
+// C) Event-risk banner — structural flag at the top; colour = state only.
+function EventRiskBanner({ er, nowMs }) {
+  if (!er) return null
+  return (
+    <section className="panel event-risk-banner">
+      <div className="erb-row">
+        <span className="erb-tag">⚑ Rischio evento</span>
+        <span><strong>{er.title}</strong> tra {countdown(er.event_time, nowMs)}
+          {' '}<span className="muted small">({String(er.event_time).slice(0, 16)})</span></span>
+        {er.expected_move_pct != null && (
+          <span className="chip">movimento atteso ±{fmtNum(er.expected_move_pct, 1)}%</span>
+        )}
+      </div>
+      <p className="muted small">Questa lettura di condizioni può <strong>ribaltarsi</strong> dopo l’evento; il ±% è la magnitudo implicita nelle opzioni, non una direzione.</p>
+    </section>
+  )
+}
+
+// A) Macro-freshness banner — only when some FRED driver is delayed.
+function MacroFreshnessBanner({ mf }) {
+  if (!mf?.any_stale) return null
+  return (
+    <section className="panel">
+      <p className="gate-line gate-warn">
+        <span className="gate-tag">⚠ dati ritardati</span> {mf.note}
+        {mf.stale_labels?.length > 0 && <> Serie: <strong>{mf.stale_labels.join(', ')}</strong>.</>}
+      </p>
+    </section>
+  )
+}
+
+// B) "Cosa ha mosso questo" — explains the move ALREADY happened, never the next.
+function AttributionBlock({ a, nowMs }) {
+  if (!a) return null
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Cosa ha mosso questo</h2>
+        <span className="muted small">
+          {a.move_pct != null ? `movimento recente ${a.move_pct > 0 ? '+' : ''}${fmtNum(a.move_pct, 1)}% · ` : ''}spiega il passato, non prevede
+        </span>
+      </header>
+      {a.chain && (
+        <div className="attrib-chain">
+          {a.chain.map((step, i) => (
+            <span key={i} className="attrib-step">{step}{i < a.chain.length - 1 && <span className="attrib-arrow">→</span>}</span>
+          ))}
+        </div>
+      )}
+      {a.attributed ? (
+        <ul className="tight">
+          {a.items.map((it, i) => (
+            <li key={i}>
+              <span className={`attrib-kind attrib-${it.kind}`}>{{ event: 'evento', macro: 'macro', news: 'news' }[it.kind]}</span>{' '}
+              {it.url ? <a href={it.url} target="_blank" rel="noreferrer">{it.text}</a> : <strong>{it.text}</strong>}
+              {it.detail && <span className="muted small"> — {it.detail}</span>}
+              {it.when && <span className="muted small"> · {it.kind === 'news' ? relativeTime(it.when, nowMs) : String(it.when).slice(0, 16)}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="honest-note">{a.note}</p>
+      )}
+      <p className="muted small caveat">{a.label}</p>
+    </section>
+  )
+}
+
+// D) Dollar co-movement — context note for dollar-sensitive instruments.
+function DollarNote({ note }) {
+  if (!note) return null
+  return (
+    <section className="panel">
+      <p className={`gate-line gate-${note.context === 'favorevole' ? 'info' : 'warn'}`}>
+        <span className="gate-tag">$ dollaro</span> {note.text}
+      </p>
+    </section>
+  )
+}
+
 // Sintesi (confluence read) — the lean (alignment of CURRENT conditions, NOT a
 // probability) + transparent factor breakdown + conditions↔market divergence.
-function SynthesisSection({ synthesis, implied }) {
+function SynthesisSection({ synthesis, implied, singleStock = false }) {
   if (!synthesis) return null
-  const { lean, factors = [], market, divergence, caveats = [] } = synthesis
+  const { lean, factors = [], market, divergence, caveats = [], mean_reversion: mr } = synthesis
   const score = lean?.score
+  const top = lean?.top_drivers || []
 
   return (
     <section className="panel synth">
@@ -156,6 +251,15 @@ function SynthesisSection({ synthesis, implied }) {
           {' '}<InfoTip text={DH.confluence_read.text} label={DH.confluence_read.label} /></h2>
         <span className="muted small">fotografia delle condizioni attuali · non una previsione</span>
       </header>
+
+      {singleStock && (
+        <p className="honest-note">
+          Per un titolo singolo questa lancetta è la scomposizione delle <strong>sole condizioni
+          MACRO+TECNICA</strong> (sfondo). La lettura che pesa <strong>TUTTO</strong> (anche
+          fondamentali e utili) è l’<strong>analisi AI</strong> qui sopra; gli odds completi sono
+          la <strong>probabilità implicita</strong>. I fondamentali NON entrano in questo calcolo.
+        </p>
+      )}
 
       {/* a. signature gauge + the calibrated implied probability, equal weight */}
       <div className="synth-top">
@@ -169,6 +273,14 @@ function SynthesisSection({ synthesis, implied }) {
               {lean.contributing_factors} fattori <InfoTip text={DH.lean.text} label={DH.lean.label} />
             </p>
           )}
+          {top.length > 0 && (
+            <p className="muted small" style={{ textAlign: 'center' }}>
+              guidata da: {top.map((d, i) => (
+                <span key={d.key}>{i > 0 ? ', ' : ''}<span className={signClass(d.contribution)}>{d.label} ({d.contribution > 0 ? '+' : ''}{fmtNum(d.contribution, 0)})</span></span>
+              ))}
+            </p>
+          )}
+          {lean?.tech_caveat && <p className="muted small" style={{ textAlign: 'center' }}>{lean.tech_caveat}</p>}
         </div>
         <div className="synth-side">
           <ProbBar value={market?.prob_up}
@@ -187,14 +299,22 @@ function SynthesisSection({ synthesis, implied }) {
         </div>
       </div>
 
-      {/* a. factor breakdown — expandable, full transparency */}
+      {/* e. mean-reversion trap — fires ONLY when extension drives a counter-trend lean */}
+      {mr && (
+        <div className="mean-rev-warning">
+          <span className="gate-tag">⚠ fallacia dello scommettitore</span>
+          <span>{mr.message}</span>
+        </div>
+      )}
+
+      {/* a. factor breakdown — expandable; contribution makes the driver obvious */}
       <details className="factors">
         <summary>
           Dettaglio per fattore <InfoTip text={DH.factor_breakdown.text} label={DH.factor_breakdown.label} />
         </summary>
         <div className="risk-table-wrap">
           <table className="risk-table">
-            <thead><tr><th>Fattore</th><th>Stato</th><th>Tipo</th><th>Peso</th><th>Nota</th></tr></thead>
+            <thead><tr><th>Fattore</th><th>Stato</th><th>Tipo</th><th>Peso</th><th>Contributo</th><th>Nota</th></tr></thead>
             <tbody>
               {factors.map((f) => (
                 <tr key={f.key} className={f.included ? '' : 'excluded'}>
@@ -202,12 +322,16 @@ function SynthesisSection({ synthesis, implied }) {
                   <td><span className={`fac ${facClass(f.classification)}`}>{facLabel(f.classification)}</span></td>
                   <td className="muted small">{f.kind === 'context' ? 'contesto' : 'direzionale'}</td>
                   <td className="muted">{f.included ? fmtNum(f.weight, 1) : '—'}</td>
+                  <td className={f.contribution != null ? signClass(f.contribution) : 'muted'}>
+                    {f.contribution != null ? `${f.contribution > 0 ? '+' : ''}${fmtNum(f.contribution, 0)}` : '—'}
+                  </td>
                   <td className="muted small">{f.detail}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p className="muted small">Il «Contributo» è il peso segnato di ciascun fattore sul lean (scala −100..+100). Somma dei contributi = lancetta. I fattori di contesto non contribuiscono.</p>
       </details>
 
       {/* d. fixed caveats */}
@@ -479,13 +603,17 @@ function Context({ drivers, events, figures, nowMs }) {
       <h3 className="muted small ctx-h">Driver macro</h3>
       <div className="risk-table-wrap">
         <table className="risk-table">
-          <thead><tr><th>Driver</th><th>Valore</th><th>Mov.</th><th>Stato</th><th>Lettura</th></tr></thead>
+          <thead><tr><th>Driver</th><th>Valore</th><th>Mov.</th><th>Dato al</th><th>Stato</th><th>Lettura</th></tr></thead>
           <tbody>
             {(drivers || []).map((d) => (
               <tr key={d.id}>
                 <td>{d.label}</td>
                 <td>{d.value == null ? '—' : fmtNum(d.value, 2)}</td>
                 <td>{{ up: '↑', down: '↓', flat: '→' }[d.direction] || '→'}</td>
+                <td className={d.stale ? 'warn' : 'muted'}>
+                  {d.as_of_date || (d.as_of ? String(d.as_of).slice(0, 10) : '—')}
+                  {d.stale && <span className="stale-badge" title="dato ritardato"> ⚠ ritardato</span>}
+                </td>
                 <td><span className={`conf-state conf-${d.state}`}>{stateLabel(d.state)}</span></td>
                 <td className="muted small">{d.interpretation}</td>
               </tr>
@@ -629,6 +757,61 @@ function fmtBig(v) {
 const pctOrNa = (v) => (v == null ? '—' : fmtPct(v * 100).replace('+', ''))
 const numOrNa = (v, d = 1) => (v == null ? '—' : fmtNum(v, d))
 
+// QUADRO COMPLETO — all factor states side by side, NOT fused. Implied odds in
+// evidence (the only integrated number). Colour = state only.
+function FullPicturePanel({ fp }) {
+  if (!fp) return null
+  const factors = fp.factors || []
+  const im = fp.implied || {}
+  return (
+    <section className="panel fullpic">
+      <header className="panel-head">
+        <h2>Quadro completo
+          {' '}<InfoTip text={DH.confluence_read.text} label={DH.confluence_read.label} /></h2>
+        <span className="muted small">tutti i fattori affiancati · il colore indica solo lo stato</span>
+      </header>
+
+      {/* Implied odds — highlighted: the integrated, calibrated number. */}
+      <div className="fp-odds">
+        <ProbBar value={im.prob_up}
+          caption={`Odds impliciti · prob. salita${im.horizon ? ` · ~${im.horizon}g` : ''}`} />
+        <p className="muted small">{im.label}</p>
+      </div>
+
+      <div className="fp-grid">
+        {factors.map((x) => (
+          <div key={x.key} className={`fp-cell tone-${x.tone || 'none'}`}>
+            <span className="fp-label">{x.label}</span>
+            <span className="fp-state">{x.state}</span>
+            <span className="fp-value muted small">{x.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="muted small caveat">{fp.label}</p>
+    </section>
+  )
+}
+
+// Valuation indicator — descriptive (where the multiple sits vs ITSELF), never a
+// direction. Percentile bar when a P/E history was reconstructed, else a band.
+function ValuationIndicator({ ctx }) {
+  if (!ctx || ctx.pe == null) return null
+  return (
+    <div className="val-indicator">
+      {ctx.percentile != null ? (
+        <PercentileBar pct={ctx.percentile}
+          caption={`Valutazione vs la propria storia · ${ctx.band} (n=${ctx.n})`} />
+      ) : (
+        <p className="muted small">
+          Valutazione: <strong>{ctx.band}</strong> (P/E {ctx.basis} {fmtNum(ctx.pe, 0)}; storia P/E insufficiente per un percentile)
+        </p>
+      )}
+      <p className="muted small">{ctx.note} — non una previsione.</p>
+    </div>
+  )
+}
+
 function FundamentalsPanel({ f }) {
   const val = f.valuation || {}, g = f.growth || {}, q = f.quality || {}, c = f.cash || {}
   return (
@@ -644,6 +827,7 @@ function FundamentalsPanel({ f }) {
         <Stat label="P/S" value={numOrNa(val.ps)} />
         <Stat label="P/B" value={numOrNa(val.pb)} />
       </div>
+      <ValuationIndicator ctx={val.context} />
       <p className="muted small">{readValuation(val)}</p>
 
       <h3 className="ctx-h muted small">Crescita &amp; qualità</h3>
