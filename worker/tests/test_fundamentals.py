@@ -73,3 +73,42 @@ def test_recent_news_failure_is_empty(monkeypatch):
 
 def test_recent_news_needs_terms():
     assert stock_news.recent_news("", "") == []
+
+
+# --- AI input now carries fundamentals + news (the missing link) -----
+class _StubAI:
+    """Captures the user payload sent to the model; returns a valid reading."""
+    def __init__(self):
+        self.last_user = None
+
+    def json_call(self, *, model, system, user, schema, max_tokens):
+        self.last_user = user
+        self.last_system = system
+        return {"read": "ok", "conviction": "media"}
+
+
+def test_ai_input_includes_fundamentals_and_news():
+    from app.ai.decision import summarize_decision_board
+    ai = _StubAI()
+    board = {
+        "symbol": "TSLA", "name": "Tesla", "last": 250.0,
+        "implied": {"horizons": []},
+        "fundamentals": {"valuation": {"pe_forward": 60.0},
+                         "earnings": {"next_date": "2026-07-10", "surprises": []}},
+        "news": [{"title": "NHTSA opens probe into Tesla", "source": "Reuters"}],
+    }
+    out = summarize_decision_board(ai, model="m", board=board)
+    assert out and out["read"] == "ok"
+    # fundamentals + news must be in the payload the model sees
+    assert "company_fundamentals" in ai.last_user and "fresh_news" in ai.last_user
+    assert "pe_forward" in ai.last_user and "NHTSA" in ai.last_user
+    # and the system prompt instructs qualitative integration, no directional number
+    assert "FONDAMENTALI" in ai.last_system and "raccomandazione" in ai.last_system.lower()
+
+
+def test_ai_input_omits_fundamentals_for_macro_instruments():
+    from app.ai.decision import summarize_decision_board
+    ai = _StubAI()
+    board = {"symbol": "GC=F", "name": "Oro", "implied": {"horizons": []}}
+    summarize_decision_board(ai, model="m", board=board)
+    assert "company_fundamentals" not in ai.last_user  # gold has none -> not added

@@ -81,6 +81,70 @@ def parse_fundamentals(info: dict, earnings: dict | None = None) -> dict:
     }
 
 
+def valuation_context(pe_forward: float | None, pe_trailing: float | None,
+                      pe_history: list[float] | None = None) -> dict:
+    """DESCRIPTIVE valuation band — where the multiple sits vs ITSELF, not a
+    direction or a forecast. Pure & unit-tested.
+
+    If a reconstructed P/E history (>= 8 points) is given, the band comes from the
+    percentile of the current P/E within it; otherwise a coarse absolute band.
+    Returns {pe, basis, band, percentile, n, note}. Never directional."""
+    pe = pe_forward if pe_forward is not None else pe_trailing
+    basis = "forward" if pe_forward is not None else ("trailing" if pe_trailing is not None else "n/d")
+    if pe is None or pe <= 0:
+        return {"pe": None, "basis": basis, "band": "n/d", "percentile": None, "n": 0,
+                "note": "Contesto di valutazione, non una previsione."}
+    hist = [h for h in (pe_history or []) if h is not None and h > 0]
+    pctl = None
+    if len(hist) >= 8:
+        pctl = sum(1 for h in hist if h <= pe) / len(hist)
+    if pctl is not None:
+        band = "cara" if pctl >= 0.66 else "economica" if pctl <= 0.34 else "nella media"
+    else:
+        band = "cara" if pe > 30 else "economica" if pe < 12 else "nella media"
+    return {"pe": pe, "basis": basis, "band": band, "percentile": pctl, "n": len(hist),
+            "note": ("Dove sta la valutazione rispetto alla propria storia — "
+                     "contesto, non una previsione.")}
+
+
+def _pe_history(symbol: str) -> list[float]:
+    """Reconstruct a rough P/E series = monthly price ÷ trailing-12m EPS, using
+    past reported quarterly EPS. Honest (real data) but coarse; degrades to []."""
+    try:
+        import yfinance as yf
+
+        t = yf.Ticker(symbol)
+        edf = t.get_earnings_dates(limit=16)
+        hist = t.history(period="4y", interval="1mo")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("pe history %s failed: %s", symbol, exc)
+        return []
+    if edf is None or getattr(edf, "empty", True) or hist is None or getattr(hist, "empty", True):
+        return []
+    quarters: list[tuple[date, float]] = []
+    for idx, row in edf.iterrows():
+        d = idx.date() if hasattr(idx, "date") else None
+        rep = _num(row.get("Reported EPS"))
+        if d is not None and rep is not None:
+            quarters.append((d, rep))
+    quarters.sort()
+    if len(quarters) < 4:
+        return []
+    closes = [(i.date() if hasattr(i, "date") else None, float(c))
+              for i, c in zip(hist.index, hist["Close"]) if c == c]
+    closes = [(d, c) for d, c in closes if d is not None]
+    out: list[float] = []
+    for k in range(3, len(quarters)):
+        ttm = sum(e for _, e in quarters[k - 3:k + 1])
+        if ttm <= 0:
+            continue
+        qd = quarters[k][0]
+        px = next((c for d, c in closes if d >= qd), closes[-1][1] if closes else None)
+        if px:
+            out.append(px / ttm)
+    return out
+
+
 def _earnings_block(symbol: str, today: date) -> dict:
     """Next earnings date + EPS consensus + recent surprises from yfinance."""
     try:
@@ -136,6 +200,14 @@ class YFinanceFundamentalsProvider(FundamentalsProvider):
             log.warning("fundamentals info %s failed: %s", symbol, exc)
             info = {}
         data = parse_fundamentals(info, _earnings_block(symbol, today))
+        try:
+            data["valuation"]["context"] = valuation_context(
+                data["valuation"]["pe_forward"], data["valuation"]["pe_trailing"],
+                _pe_history(symbol))
+        except Exception as exc:  # noqa: BLE001 — descriptive only
+            log.warning("valuation context %s failed: %s", symbol, exc)
+            data["valuation"]["context"] = valuation_context(
+                data["valuation"]["pe_forward"], data["valuation"]["pe_trailing"], None)
         data["as_of"] = datetime.now(timezone.utc).isoformat()
         try:
             path.write_text(json.dumps(data, default=str))

@@ -60,7 +60,20 @@ _SYSTEM = (
     "spingerebbe al rialzo (upside_drivers) e al ribasso (downside_drivers), "
     "cosa monitorare al prossimo evento (watch_next_event), e una convinzione "
     "QUALITATIVA (alta/media/bassa) sul grado di allineamento — non sull'esito. "
-    "Metti i caveat in 'uncertainty_note'. Sii breve."
+    "Metti i caveat in 'uncertainty_note'. Sii breve. "
+    "(6) Se ricevi i FONDAMENTALI dell'azienda (valutazione P/E trailing/forward, "
+    "P/S, crescita ricavi/utili, margini, ROE, free cash flow, cassa/debito), i "
+    "PROSSIMI UTILI con lo storico delle sorprese, e le NEWS fresche, INTEGRALI "
+    "QUALITATIVAMENTE nella lettura insieme a macro/tecnica/skew/odds: è qui — "
+    "nella prosa — che 'tutto insieme' va combinato (NON in un punteggio). "
+    "Evidenzia ESPLICITAMENTE le tensioni (es. «valutazione molto alta + crescita "
+    "in rallentamento, ma odds di mercato ~neutri e utili imminenti»). I "
+    "fondamentali sono già riflessi nel prezzo: contesto, non una previsione. "
+    "Resta QUALITATIVO (convinzione alta/bassa), MAI un numero di probabilità "
+    "direzionale tuo, MAI una raccomandazione operativa. "
+    "(7) BREVITÀ: 'read' al massimo ~150 parole; al massimo 4 voci per ciascuna "
+    "lista (upside_drivers, downside_drivers, watch_next_event), ognuna una riga. "
+    "Niente preamboli."
 )
 
 
@@ -70,7 +83,7 @@ def summarize_decision_board(
     model: str,
     board: dict[str, Any],
     level_probs: dict[str, Any] | None = None,
-    max_tokens: int = 1500,
+    max_tokens: int = 3000,
 ) -> dict[str, Any] | None:
     """Return the honest AI reading dict, or None on failure.
 
@@ -89,6 +102,12 @@ def summarize_decision_board(
         "upcoming_events": board.get("events"),
         "figure_statements": board.get("figures"),
     }
+    # Single stocks: feed company fundamentals + fresh news so the AI can weigh
+    # "everything together" qualitatively (the one place fusion is honest).
+    if board.get("fundamentals"):
+        compact["company_fundamentals"] = board.get("fundamentals")
+    if board.get("news"):
+        compact["fresh_news"] = board.get("news")
     user = ("DECISION BOARD (solo fatti; le probabilità qui sono REALI — "
             "implicite nelle opzioni o frequenze storiche):\n"
             + json.dumps(compact, default=str, ensure_ascii=False))
