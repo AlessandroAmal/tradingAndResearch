@@ -98,6 +98,37 @@ def _has_losing_same_dir(side: str, trades: Sequence[Mapping]) -> bool:
     return False
 
 
+# --- kill-switch helpers (pre-mortem rules the user set when lucid) ---
+def consecutive_losses(closed_trades: Sequence[Mapping]) -> int:
+    """Trailing run of losing closed trades (list NEWEST-first)."""
+    run = 0
+    for t in closed_trades or ():
+        pnl = t.get("pnl") if t.get("pnl") is not None else t.get("realized_pnl")
+        if pnl is not None and pnl < 0:
+            run += 1
+        else:
+            break
+    return run
+
+
+def cooldown_hit(recent_stops: Sequence[Mapping], symbol: str, side: str,
+                 now: datetime, cooldown_hours: float) -> dict | None:
+    """A stop TAKEN on the same symbol+direction within the cooldown window → the
+    anti-revenge rule. `recent_stops` items: {symbol, side, closed_at}."""
+    if cooldown_hours <= 0:
+        return None
+    for t in recent_stops or ():
+        if t.get("symbol") != symbol or t.get("side") != side:
+            continue
+        when = _parse_dt(t.get("closed_at"))
+        if when is None:
+            continue
+        hours = (now - when).total_seconds() / 3600.0
+        if 0 <= hours <= cooldown_hours:
+            return {"hours_ago": hours, "cooldown_hours": cooldown_hours}
+    return None
+
+
 def _parse_dt(s: str | None) -> datetime | None:
     if not s:
         return None
@@ -167,6 +198,10 @@ def evaluate_gate(
     open_same_symbol: Sequence[Mapping] = (),
     budget_caps: Mapping | None = None,   # {"day":{"max":100,"mode":"warn"}, ...}
     budget_used: Mapping | None = None,   # {"day":40,"week":120,"month":250} currency
+    # --- kill-switch (pre-mortem rules the user set when lucid) ---
+    killswitch: Mapping | None = None,    # {enabled, max_consecutive_losses, cooldown_hours, until}
+    consecutive_loss_count: int = 0,      # trailing losses in the CURRENT scope (real|paper)
+    cooldown: Mapping | None = None,      # {hours_ago, cooldown_hours} if a stop was just taken same sym+dir
 ) -> dict:
     """Validate a prospective trade. Returns metrics + warnings + a journal draft.
     Warnings inform; only mandatory-stop and block-mode budget caps are blocking."""
@@ -260,9 +295,30 @@ def evaluate_gate(
                 f"{b['max']:.0f} max ({b['used']:.0f} già + {risk_amount:.0f} nuovo).",
             ))
 
+    # KILL-SWITCH — soft blocks from the rules the user set when lucid. Blocking,
+    # but the user can force it (recorded for the discipline scorecard).
+    ks = dict(killswitch or {})
+    if ks.get("enabled"):
+        max_losses = int(ks.get("max_consecutive_losses", 0) or 0)
+        if max_losses > 0 and consecutive_loss_count >= max_losses:
+            until = f" fino a {ks['until']}" if ks.get("until") else ""
+            warnings.append(GateWarning(
+                "kill_switch_losses", "block",
+                f"{consecutive_loss_count} perdite di fila: le tue regole dicono STOP{until}. "
+                "Kill-switch che TU hai impostato quando eri lucido — forzalo solo consapevolmente.",
+            ))
+        cd = dict(cooldown or {})
+        if cd.get("hours_ago") is not None:
+            warnings.append(GateWarning(
+                "cooldown", "block",
+                f"Stop preso su {symbol} {side} {cd['hours_ago']:.0f}h fa: cooldown {cd.get('cooldown_hours')}h "
+                "(anti-revenge). Aspetta prima di rientrare nello stesso verso.",
+            ))
+
     has_blocking = any(w.severity == "block" for w in warnings)
     metrics = {
         "symbol": symbol, "side": side,
+        "consecutive_losses": consecutive_loss_count, "cooldown": dict(cooldown or {}) or None,
         "risk_amount": risk_amount, "risk_pct": risk_pct, "stop_distance": stop_distance,
         "rr": rr, "resulting_heat_pct": resulting_heat_pct,
         "existing_heat_pct": existing_heat_pct, "n_concurrent": n_concurrent,

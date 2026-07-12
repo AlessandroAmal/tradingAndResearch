@@ -46,6 +46,12 @@ export async function fetchPositions(status = 'open') {
   return q
 }
 
+// Latest indicator-calibration run (results + evidence-based lean weights).
+export async function fetchCalibration() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('calibrations').select('*').order('calibrated_at', { ascending: false }).limit(1).maybeSingle()
+}
+
 // Event-experiment paper positions (open + closed), separate from real risk and
 // from the user's own manual paper positions.
 export async function fetchExperimentPositions(limit = 2000) {

@@ -48,6 +48,16 @@ DUAL_LENSES = {
 _SECTION_KEYS = ("macro", "technical", "news", "cyclicality", "fundamentals")
 
 
+def _instrument_costs(inst: dict, db_cfg: dict) -> dict:
+    """Round-trip trading-cost estimate for the decision bench (config-driven)."""
+    default = dict(db_cfg.get("costs_default", {}) or {})
+    base = {"spread_bps": float(default.get("spread_bps", 5)),
+            "commission": float(default.get("commission", 0))}
+    override = inst.get("costs") or {}
+    return {"spread_bps": float(override.get("spread_bps", base["spread_bps"])),
+            "commission": float(override.get("commission", base["commission"]))}
+
+
 def _section_emphasis(inst: dict) -> dict:
     base = ({"macro": 1, "technical": 2, "news": 3, "cyclicality": 1, "fundamentals": 3}
             if inst.get("fundamentals") else
@@ -451,6 +461,16 @@ def run_decision_board(
     hist_days = int(cfg.indicators.get("history_days", 250))
     r = cfg.risk_free_rate
     today = datetime.now(timezone.utc).date()
+
+    # Evidence-based lean weights (Part B): the LATEST explicit calibration, if any.
+    # The gauge is labelled "calibrata al <date>"; non-significant factors → weight 0.
+    calibration = None
+    cal_weights: dict = {}
+    try:
+        calibration = storage.get_latest_calibration()
+        cal_weights = (calibration or {}).get("weights", {}) or {}
+    except Exception as exc:  # noqa: BLE001 — pre-0019 or none yet
+        log.warning("No calibration available: %s", exc)
     now_iso = datetime.now(timezone.utc).isoformat()
 
     instruments = list(db_cfg.get("instruments", []) or [])
@@ -538,14 +558,33 @@ def run_decision_board(
                     log.warning("Stock news failed for %s: %s", symbol, exc)
 
             # Synthesis (confluence read) — transparent lean + market divergence.
+            # Evidence-based recomposition: calibrated weights override the config
+            # ones for the tested lean factors (non-significant → 0). Explicit,
+            # dated; still "conditions, not a probability".
+            syn_weights = dict(inst.get("synthesis", {}).get("weights", {}))
+            sym_cal = cal_weights.get(symbol) or {}
+            for k, cw in sym_cal.items():
+                if isinstance(cw, dict) and "weight" in cw:
+                    syn_weights[k] = cw["weight"]
             synthesis = confluence_read(
                 drivers=drivers,
                 technicals=technicals,
                 implied=implied,
                 next_event=events[0] if events else None,
-                weights=dict(inst.get("synthesis", {}).get("weights", {})),
+                weights=syn_weights,
                 fx=fx,
             )
+            if calibration and sym_cal:
+                synthesis["calibration"] = {
+                    "calibrated_at": calibration.get("calibrated_at"),
+                    "period_start": calibration.get("period_start"),
+                    "period_end": calibration.get("period_end"),
+                    "weight_horizon": calibration.get("weight_horizon"),
+                    "weights": sym_cal,
+                    "note": ("Lancetta calibrata dall'evidenza: pesi ∝ IC out-of-sample dei "
+                             "soli fattori significativi; i contrari sono azzerati (non invertiti); "
+                             "i non significativi restano contesto a peso 0. Resta condizioni, non una previsione."),
+                }
 
             # Event context (honest, never fused into the lean): what moved the
             # recent move, an imminent-event banner, and a dollar co-movement note.
@@ -635,6 +674,7 @@ def run_decision_board(
                 "seasonality": seasonality,
                 "section_emphasis": _section_emphasis(inst),
                 "fundamentals_note": inst.get("fundamentals_note"),
+                "costs": _instrument_costs(inst, db_cfg),
                 "macro_freshness": {k: v for k, v in freshness.items() if k != "drivers"},
                 "attribution": attribution,
                 "event_risk": event_risk,

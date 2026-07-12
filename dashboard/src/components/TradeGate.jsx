@@ -3,7 +3,7 @@ import { insertPosition, insertJournalEntry, fetchDecisionBoard } from '../api/d
 import { positionSize, evaluatePosition } from '../lib/risk'
 import { evaluateGate, GATE_CAVEAT } from '../lib/gate'
 import { committedInWindows, setAsideToday } from '../lib/discipline'
-import { BudgetStrip, GateWarnings, capsFromSettings, gateInputsForSymbol } from './GateShared'
+import { BudgetStrip, GateWarnings, capsFromSettings, gateInputsForSymbol, killswitchInputs } from './GateShared'
 import { fmtNum, fmtPct } from '../lib/format'
 import InfoTip from './InfoTip'
 import { RISK_HELP_BY_KEY as RH } from '../data/guide'
@@ -84,6 +84,7 @@ export default function TradeGate({ instruments, settings, positions, closedPosi
     current: priceBySymbol?.[form.symbol], multiplier,
   }), [form.symbol, technicals, positions, closedPositions, priceBySymbol, multiplier])
 
+  const ks = useMemo(() => killswitchInputs({ settings, closedPositions, symbol: form.symbol, side: form.side, paper: false }), [settings, closedPositions, form.symbol, form.side])
   const gate = useMemo(() => evaluateGate({
     symbol: form.symbol, side: form.side, entry, stop, target, size, multiplier,
     accountSize, maxRiskPerTradePct: maxRisk, maxPortfolioHeatPct: maxHeat,
@@ -92,8 +93,8 @@ export default function TradeGate({ instruments, settings, positions, closedPosi
     events, eventWarnHours,
     requireThesis: true, atr: disc.atr, stopAtrMinMultiple, technicals: disc.technicals,
     recentClosedSameSymbol: disc.recentClosedSameSymbol, openSameSymbol: disc.openSameSymbol,
-    budgetCaps: caps, budgetUsed,
-  }), [form, entry, stop, target, size, multiplier, accountSize, maxRisk, maxHeat, maxPos, rrMin, existingHeatPct, positions, lean, events, eventWarnHours, disc, stopAtrMinMultiple, caps, budgetUsed])
+    budgetCaps: caps, budgetUsed, ...ks,
+  }), [form, entry, stop, target, size, multiplier, accountSize, maxRisk, maxHeat, maxPos, rrMin, existingHeatPct, positions, lean, events, eventWarnHours, disc, stopAtrMinMultiple, caps, budgetUsed, ks])
 
   const m = gate.metrics
   const warnCount = gate.warnings.filter((w) => w.severity === 'warn').length

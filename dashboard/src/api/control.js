@@ -42,3 +42,8 @@ export function generateAi(symbol, level) {
 export function generateBriefing(kind = 'intraday') {
   return post(`/briefing/${encodeURIComponent(kind)}`)
 }
+
+// FREE: recompute indicator calibration + evidence-based lean weights.
+export function recalibrate() {
+  return post('/calibrate')
+}

@@ -368,7 +368,7 @@ function DollarNote({ note }) {
 // probability) + transparent factor breakdown + conditions↔market divergence.
 function SynthesisSection({ synthesis, implied, singleStock = false }) {
   if (!synthesis) return null
-  const { lean, factors = [], market, divergence, caveats = [], mean_reversion: mr } = synthesis
+  const { lean, factors = [], market, divergence, caveats = [], mean_reversion: mr, calibration: cal } = synthesis
   const score = lean?.score
   const top = lean?.top_drivers || []
 
@@ -379,6 +379,9 @@ function SynthesisSection({ synthesis, implied, singleStock = false }) {
           {' '}<InfoTip text={DH.confluence_read.text} label={DH.confluence_read.label} /></h2>
         <span className="muted small">fotografia delle condizioni attuali · non una previsione</span>
       </header>
+      {cal && (
+        <p className="muted small">🔬 Lancetta <strong>calibrata dall’evidenza</strong> al {new Date(cal.calibrated_at).toLocaleDateString()} (periodo {cal.period_start}…{cal.period_end}, IC a {cal.weight_horizon}g). {cal.note}</p>
+      )}
 
       {singleStock && (
         <p className="honest-note">

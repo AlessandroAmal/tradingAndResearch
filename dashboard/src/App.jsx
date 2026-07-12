@@ -22,6 +22,9 @@ import MarketsOverview from './components/MarketsOverview'
 import { PaperPositions } from './components/PaperMonitor'
 import ConcentrationWarning from './components/ConcentrationWarning'
 import ExperimentResults from './pages/ExperimentResults'
+import DecisionBench from './pages/DecisionBench'
+import Expectancy from './pages/Expectancy'
+import Calibration from './pages/Calibration'
 import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
@@ -260,6 +263,8 @@ export default function App() {
           <nav className="nav subnav" aria-label="Sezione trading">
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
             {tradingTabBtn('decision', 'Decision board')}
+            {tradingTabBtn('bench', 'Decisione')}
+            {tradingTabBtn('expectancy', 'Expectancy')}
             {tradingTabBtn('backtest', 'Ricerca')}
             {tradingTabBtn('experiment', 'Esperimento eventi')}
             {tradingTabBtn('journal', 'Journal')}
@@ -363,6 +368,39 @@ export default function App() {
                 ]}
                 onGuide={() => setPrimary('guida')} />
               <Backtest />
+              <Calibration />
+            </>
+          )}
+
+          {tradingTab === 'bench' && (
+            <>
+              <TabHeader title="Banco di decisione"
+                purpose="Organizza i numeri attorno a UNA scommessa: odds impliciti sui tuoi livelli, win-rate di pareggio (costi inclusi), strutture a confronto, scenari in euro. Read-only, mai un ordine, mai una probabilità fabbricata."
+                howto={[
+                  'Imposta strumento/direzione/orizzonte/entry/stop/target/rischio%.',
+                  'Il win-rate di pareggio va confrontato con gli odds impliciti: il margine è la TUA tesi.',
+                  '“Monitora come test” salva la scommessa come paper con lo snapshot.',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <DecisionBench
+                instruments={instruments} settings={riskSettings}
+                positions={realPositions} closedPositions={recentClosed}
+                priceBySymbol={priceBySymbol} multiplierBySymbol={multiplierBySymbol}
+                events={events} onSaved={loadAll} />
+            </>
+          )}
+
+          {tradingTab === 'expectancy' && (
+            <>
+              <TabHeader title="Expectancy & sopravvivenza"
+                purpose="La matematica di lungo periodo del TUO trading, sui tuoi dati chiusi. Misurata, mai prevista: n e intervalli sempre visibili; sotto soglia = rumore."
+                howto={[
+                  'Filtra per reali/paper/strumento: le paper insegnano ma non provano l’esecuzione reale.',
+                  'Il rischio di rovina dipende dalla size: la size decide se sopravvivi.',
+                  'La size Kelly usa il bound INFERIORE: quanto è dimostrato, non sperato.',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <Expectancy settings={riskSettings} multiplierBySymbol={multiplierBySymbol} refreshKey={refreshKey} />
             </>
           )}
 

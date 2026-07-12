@@ -147,6 +147,18 @@ class AppConfig:
     def set_aside_per_day(self) -> float:
         return float(self.risk.get("set_aside_per_day", 100.0))
 
+    @property
+    def killswitch_enabled(self) -> bool:
+        return bool(self.risk.get("killswitch_enabled", True))
+
+    @property
+    def max_consecutive_losses(self) -> int:
+        return int(self.risk.get("max_consecutive_losses", 3))
+
+    @property
+    def cooldown_hours(self) -> float:
+        return float(self.risk.get("cooldown_hours", 24))
+
     # --- options desk (M5) -----------------------------------------
     @property
     def options_cron(self) -> str:

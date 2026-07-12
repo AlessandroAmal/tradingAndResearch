@@ -57,6 +57,13 @@ risk:
   # Profit set-aside reminder (tracking only — no money moves): target per day.
   set_aside_per_day: 100
 
+  # --- Kill-switch (pre-mortem: stop rules you set when lucid) ---------
+  # Soft blocks in the gate (you can force them, but it's recorded). Real and
+  # paper losing streaks are counted separately.
+  killswitch_enabled: true
+  max_consecutive_losses: 3     # after N losses in a row -> soft block
+  cooldown_hours: 24            # no new trade SAME instrument+direction within X h of a stop (anti-revenge)
+
 # --- Trading universe (watchlist) — brief §4 ------------------------
 # `symbol` is the yfinance ticker. `sleeve` groups instruments
 # (macro|equity|commodity|energy|gauge). `tradeable_on` is informational.
@@ -499,6 +506,10 @@ decision_board:
   # Ciclicità (stagionalità): history pulled per instrument for month/weekday
   # seasonality. Several years needed; honest by construction (n + soglia + caveat).
   seasonality_history_days: 2600
+  # Decision bench costs: estimated ROUND-TRIP trading cost per instrument, used
+  # for the cost-adjusted break-even win rate. spread_bps = bps of notional;
+  # commission = flat currency per trade. Override per instrument via `costs:`.
+  costs_default: { spread_bps: 5, commission: 0 }
   base_rate:
     horizons: [1, 3, 5]        # trading days ahead for the historical distribution
     min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)

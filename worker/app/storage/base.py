@@ -59,6 +59,14 @@ class Storage(Protocol):
         """Patch a position row (e.g. close an experiment paper position)."""
         ...
 
+    def insert_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Store one indicator-calibration run (results + derived weights)."""
+        ...
+
+    def get_latest_calibration(self) -> dict[str, Any] | None:
+        """The most recent calibration run, or None."""
+        ...
+
     # --- risk settings (M6; seeded from config for the dashboard) --
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         """Upsert the singleton risk-settings row (id = 1)."""

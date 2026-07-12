@@ -51,6 +51,29 @@ function hasLosingSameDir(side, trades) {
   return (trades || []).some((t) => t.side === side && (Number(t.pnl) || 0) < 0)
 }
 
+// Kill-switch helpers — closedTrades NEWEST-first.
+export function consecutiveLosses(closedTrades) {
+  let run = 0
+  for (const t of closedTrades || []) {
+    const pnl = t.pnl != null ? Number(t.pnl) : Number(t.realized_pnl)
+    if (pnl != null && !Number.isNaN(pnl) && pnl < 0) run++
+    else break
+  }
+  return run
+}
+
+export function cooldownHit(recentStops, symbol, side, nowMs, cooldownHours) {
+  if (!(cooldownHours > 0)) return null
+  for (const t of recentStops || []) {
+    if (t.symbol !== symbol || t.side !== side) continue
+    const when = new Date(t.closed_at).getTime()
+    if (Number.isNaN(when)) continue
+    const hours = (nowMs - when) / 3_600_000
+    if (hours >= 0 && hours <= cooldownHours) return { hoursAgo: hours, cooldownHours }
+  }
+  return null
+}
+
 function budgetStatus(caps, used, riskAmount) {
   if (!caps || riskAmount == null) return []
   const u = used || {}
@@ -74,6 +97,7 @@ export function evaluateGate({
   // discipline guards (opt-in)
   requireThesis = false, atr = null, stopAtrMinMultiple = 1.5, technicals = null,
   recentClosedSameSymbol = [], openSameSymbol = [], budgetCaps = null, budgetUsed = null,
+  killswitch = null, consecutiveLossCount = 0, cooldown = null,
 }) {
   const riskAmount = openRisk(entry, stop, size, multiplier)
   const riskPct = pctOfAccount(riskAmount, accountSize)
@@ -125,6 +149,18 @@ export function evaluateGate({
   for (const b of budget) {
     if (b.over)
       w.push({ code: `budget_${b.window}`, severity: b.mode === 'block' ? 'block' : 'warn', message: `Supereresti il budget di ${b.label}: ${b.resulting.toFixed(0)} impegnato / ${b.max.toFixed(0)} max (${b.used.toFixed(0)} già + ${(riskAmount || 0).toFixed(0)} nuovo).` })
+  }
+
+  // Kill-switch — soft blocks the user set when lucid (forceable, recorded).
+  const ks = killswitch || {}
+  if (ks.enabled) {
+    const maxL = Number(ks.maxConsecutiveLosses || 0)
+    if (maxL > 0 && consecutiveLossCount >= maxL) {
+      w.push({ code: 'kill_switch_losses', severity: 'block', message: `${consecutiveLossCount} perdite di fila: le tue regole dicono STOP${ks.until ? ` fino a ${ks.until}` : ''}. Kill-switch che TU hai impostato quando eri lucido — forzalo solo consapevolmente.` })
+    }
+    if (cooldown && cooldown.hoursAgo != null) {
+      w.push({ code: 'cooldown', severity: 'block', message: `Stop preso su ${symbol} ${side} ${cooldown.hoursAgo.toFixed(0)}h fa: cooldown ${cooldown.cooldownHours}h (anti-revenge). Aspetta prima di rientrare nello stesso verso.` })
+    }
   }
 
   const hasBlocking = w.some((x) => x.severity === 'block')

@@ -2,6 +2,7 @@
 // and the paper "Monitora come test" form, so the guards fire identically in both.
 // READ-ONLY: renders warnings and budget context; never places an order.
 import { unrealizedPnl } from '../lib/risk'
+import { consecutiveLosses, cooldownHit } from '../lib/gate'
 import { fmtNum } from '../lib/format'
 
 // risk_settings singleton -> budget caps for the gate.
@@ -24,6 +25,25 @@ export function gateInputsForSymbol({ symbol, technicals, positions, closedPosit
     .filter((p) => p.symbol === symbol)
     .map((p) => ({ side: p.side, pnl: p.realized_pnl == null ? null : Number(p.realized_pnl) }))
   return { atr: t?.atr ?? null, technicals: t, openSameSymbol, recentClosedSameSymbol }
+}
+
+// Kill-switch inputs from the user's OWN recent closed trades (real|paper scope).
+// consecutive losses are scope-wide; cooldown is per symbol+direction.
+export function killswitchInputs({ settings, closedPositions, symbol, side, paper, nowMs = Date.now() }) {
+  const scope = (closedPositions || [])
+    .filter((p) => p.status === 'closed' && p.realized_pnl != null && !p.experiment && !!p.paper === !!paper)
+    .map((p) => ({ symbol: p.symbol, side: p.side, pnl: Number(p.realized_pnl), closed_at: p.closed_at }))
+    .sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))     // newest first
+  const cooldownHours = Number(settings?.cooldown_hours ?? 24)
+  const losers = scope.filter((t) => t.pnl < 0)
+  return {
+    killswitch: {
+      enabled: settings?.killswitch_enabled !== false,
+      maxConsecutiveLosses: Number(settings?.max_consecutive_losses ?? 3),
+    },
+    consecutiveLossCount: consecutiveLosses(scope),
+    cooldown: cooldownHit(losers, symbol, side, nowMs, cooldownHours),
+  }
 }
 
 // "budget oggi/settimana/mese: usato/max" + set-aside reminder.

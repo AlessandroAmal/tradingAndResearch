@@ -169,6 +169,15 @@ def _cmd_experiment(cfg, storage) -> int:
     return 0
 
 
+def _cmd_calibrate(cfg, storage) -> int:
+    """Recalibrate the indicators from evidence (explicit step; stores a run)."""
+    from .calibration_runner import run_calibration
+    provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    res = run_calibration(cfg, storage, provider)
+    log.info("Calibration: %s", res)
+    return 0
+
+
 def _cmd_backtest(cfg, storage, args) -> int:
     provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
     if args.scan:
@@ -260,6 +269,7 @@ COMMANDS = {
     "macro": _cmd_macro,
     "decision": _cmd_decision,
     "experiment": _cmd_experiment,
+    "calibrate": _cmd_calibrate,
     "api": _cmd_api,
     "run": _cmd_run,
 }

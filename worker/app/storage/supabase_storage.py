@@ -100,6 +100,15 @@ class SupabaseStorage:
     def update_position(self, position_id: str, fields: dict[str, Any]) -> None:
         self._client.table("positions").update(fields).eq("id", position_id).execute()
 
+    def insert_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
+        res = self._client.table("calibrations").insert(row).execute()
+        return res.data[0] if res.data else {}
+
+    def get_latest_calibration(self) -> dict[str, Any] | None:
+        res = (self._client.table("calibrations").select("*")
+               .order("calibrated_at", desc=True).limit(1).execute())
+        return res.data[0] if res.data else None
+
     # --- risk settings --------------------------------------------
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         row = {**settings, "id": 1, "updated_at": "now()"}

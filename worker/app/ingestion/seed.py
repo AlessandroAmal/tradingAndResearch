@@ -63,6 +63,10 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
                 "budget_month_mode": cfg.budget_month_mode,
                 "stop_atr_min_multiple": cfg.stop_atr_min_multiple,
                 "set_aside_per_day": cfg.set_aside_per_day,
+                # kill-switch (0019)
+                "killswitch_enabled": cfg.killswitch_enabled,
+                "max_consecutive_losses": cfg.max_consecutive_losses,
+                "cooldown_hours": cfg.cooldown_hours,
             }
         )
     except Exception as exc:  # noqa: BLE001 — older DB without 0007/0016; don't block seed

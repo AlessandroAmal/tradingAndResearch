@@ -173,6 +173,23 @@ def _run_step(steps: dict, name: str, fn) -> None:
         steps[name] = {"status": "error", "error": str(exc)}
 
 
+# --- /calibrate (FREE) — recompute indicator calibration + lean weights ----
+@app.post("/calibrate", dependencies=[Depends(require_token)])
+def calibrate() -> dict[str, Any]:
+    if not _refresh_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Operazione già in corso.")
+    try:
+        cfg, storage = _cfg(), _storage()
+        from .calibration_runner import run_calibration
+        res = run_calibration(cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")))
+        # rebuild the boards so the gauge picks up the new weights immediately
+        if cfg.decision_board_enabled:
+            run_decision_board(cfg, storage, build_options_provider(cfg.options_provider), ai=None)
+        return {"ok": True, "calibration": res}
+    finally:
+        _refresh_lock.release()
+
+
 # --- /decision/{instrument}/ai (PAID) --------------------------------
 @app.post("/decision/{instrument}/ai", dependencies=[Depends(require_token)])
 def decision_ai(instrument: str, body: AIRequest | None = None) -> dict[str, Any]:

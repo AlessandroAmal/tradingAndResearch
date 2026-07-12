@@ -187,3 +187,44 @@ def test_journal_draft_records_ignored_warnings():
     tech = {"ma": [{"period": 200, "above": True}, {"period": 50, "above": True}]}
     res = evaluate_gate(**{**BASE, "side": "short", "technicals": tech, "thesis": "x"})
     assert "countertrend" in res["journal_draft"]["notes"]
+
+
+# =====================================================================
+# Kill-switch (Part C) — pre-mortem rules the user set when lucid.
+# =====================================================================
+from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+from app.gate import consecutive_losses, cooldown_hit
+
+
+def test_consecutive_losses_counts_trailing_run():
+    trades = [{"pnl": -1}, {"pnl": -1}, {"pnl": -1}, {"pnl": 2}, {"pnl": -1}]  # newest first
+    assert consecutive_losses(trades) == 3
+    assert consecutive_losses([{"pnl": 5}, {"pnl": -1}]) == 0     # last trade was a win
+    assert consecutive_losses([]) == 0
+
+
+def test_cooldown_hit_same_symbol_direction_window():
+    now = _dt(2026, 7, 12, 12, 0, tzinfo=_tz.utc)
+    stops = [{"symbol": "GC=F", "side": "long", "closed_at": (now - _td(hours=3)).isoformat()}]
+    assert cooldown_hit(stops, "GC=F", "long", now, 24) is not None
+    assert cooldown_hit(stops, "GC=F", "short", now, 24) is None     # other direction
+    assert cooldown_hit(stops, "GC=F", "long", now, 2) is None       # outside 2h window
+
+
+KS = {"enabled": True, "max_consecutive_losses": 3}
+
+
+def test_kill_switch_blocks_after_n_losses():
+    res = evaluate_gate(**{**BASE, "killswitch": KS, "consecutive_loss_count": 3})
+    codes = {(w["code"], w["severity"]) for w in res["warnings"]}
+    assert ("kill_switch_losses", "block") in codes and res["has_blocking_warnings"] is True
+    # under the limit -> no block
+    assert "kill_switch_losses" not in _codes(evaluate_gate(**{**BASE, "killswitch": KS, "consecutive_loss_count": 2}))
+    # disabled -> never blocks
+    assert "kill_switch_losses" not in _codes(evaluate_gate(**{**BASE, "killswitch": {"enabled": False}, "consecutive_loss_count": 9}))
+
+
+def test_cooldown_blocks_revenge_entry():
+    res = evaluate_gate(**{**BASE, "killswitch": KS, "cooldown": {"hours_ago": 3.0, "cooldown_hours": 24}})
+    assert ("cooldown", "block") in {(w["code"], w["severity"]) for w in res["warnings"]}
+    assert res["metrics"]["consecutive_losses"] == 0
