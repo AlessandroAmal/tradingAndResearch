@@ -42,7 +42,10 @@ def test_dax_config_cot_off_eurex():
 
 def test_existing_instruments_unchanged():
     insts = _insts()
-    assert set(["GC=F", "EURUSD=X", "^NDX", "NVDA", "TSLA", "GOOGL", "HG=F", "^GDAXI"]) == set(insts)
+    # The original macro/single-stock set is still present unchanged; the book
+    # holdings (MSFT/AVGO/VRT/NVO/SPGI) were added on top (single-stock template).
+    assert {"GC=F", "EURUSD=X", "^NDX", "NVDA", "TSLA", "GOOGL", "HG=F", "^GDAXI"} <= set(insts)
+    assert {"MSFT", "AVGO", "VRT", "NVO", "SPGI"} <= set(insts)
     assert insts["EURUSD=X"]["positioning"]["market"] == "EURO FX"
     assert insts["EURUSD=X"]["positioning"].get("report", "tff") == "tff"   # financial, unchanged
     assert "positioning" not in insts["GC=F"]

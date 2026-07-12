@@ -26,9 +26,11 @@ export default function BriefingPanel({ refreshKey = 0 }) {
   // Re-fetch on mount and whenever the page is refreshed (Aggiorna bumps refreshKey).
   useEffect(() => { load() }, [load, refreshKey])
 
-  const runGenerate = useCallback(async () => {
-    setGen({ loading: true, error: null })
-    const { error } = await generateBriefing('intraday')
+  // Generate a specific kind on demand (both are paid). Lets the user un-stick
+  // Morning or Intraday immediately instead of waiting for the daily scheduler.
+  const runGenerate = useCallback(async (kind) => {
+    setGen({ loading: kind, error: null })
+    const { error } = await generateBriefing(kind)
     if (error) { setGen({ loading: false, error: error.message }); return }
     setGen({ loading: false, error: null })
     load() // re-read the freshly generated briefing
@@ -38,13 +40,7 @@ export default function BriefingPanel({ refreshKey = 0 }) {
     <section className="panel">
       <header className="panel-head">
         <h2>Briefing</h2>
-        <div className="briefing-actions">
-          {loading && <span className="muted small">loading…</span>}
-          <button className="ghost small" onClick={runGenerate} disabled={gen.loading || !apiConfigured}
-            title="Genera un briefing intraday aggiornato (usa l’API Anthropic, a pagamento)">
-            {gen.loading ? 'Genero…' : '↻ Genera ora (AI)'}
-          </button>
-        </div>
+        {loading && <span className="muted small">loading…</span>}
       </header>
 
       {gen.error && <p className="error">Generazione non riuscita — {gen.error}</p>}
@@ -54,22 +50,31 @@ export default function BriefingPanel({ refreshKey = 0 }) {
         <p className="muted small">Nessun briefing ancora. Premi “Genera ora” o attendi lo scheduler.</p>
       )}
 
-      <Briefing label="Intraday — what matters now" b={intraday} />
-      <Briefing label="Morning" b={morning} />
+      <Briefing label="Intraday — what matters now" b={intraday}
+        onGenerate={() => runGenerate('intraday')} busy={gen.loading} kind="intraday" />
+      <Briefing label="Morning" b={morning}
+        onGenerate={() => runGenerate('morning')} busy={gen.loading} kind="morning" />
     </section>
   )
 }
 
-function Briefing({ label, b }) {
-  if (!b) return null
+function Briefing({ label, b, onGenerate, busy, kind }) {
   return (
     <article className="briefing">
       <div className="briefing-head">
         <span className="briefing-label">{label}</span>
         <span className="muted small">
-          {b.generated_at ? new Date(b.generated_at).toLocaleString() : ''}
+          {b?.generated_at ? new Date(b.generated_at).toLocaleString() : 'mai generato'}
+          {onGenerate && (
+            <> · <button className="ghost small" onClick={onGenerate} disabled={!!busy || !apiConfigured}
+              title="Genera un briefing aggiornato (usa l’API Anthropic, a pagamento)">
+              {busy === kind ? 'Genero…' : '↻ Genera ora (AI)'}
+            </button></>
+          )}
         </span>
       </div>
+      {!b && <p className="muted small">Nessun briefing di questo tipo. Premi “Genera ora”.</p>}
+      {b && (<>
       {Array.isArray(b.themes_covered) && b.themes_covered.length > 0 && (
         <div className="briefing-themes">
           {b.themes_covered.map((t) => (
@@ -81,6 +86,7 @@ function Briefing({ label, b }) {
       {b.uncertainty_note && (
         <p className="briefing-caveat">⚠ {b.uncertainty_note}</p>
       )}
+      </>)}
     </article>
   )
 }

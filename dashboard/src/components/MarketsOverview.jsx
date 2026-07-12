@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchDecisionBoardsFull } from '../api/data'
 import { fmtNum, fmtPct, countdown } from '../lib/format'
 import { MiniConfluence } from './Indicators'
+import InfoTip from './InfoTip'
+import { DECISION_HELP_BY_KEY as DH } from '../data/guide'
 
 // PANORAMICA — orient in 5 seconds and SORT by where to LOOK (not by "success").
 // Per instrument: price · mini confluence gauge (conditions) · implied prob (the
@@ -48,12 +50,12 @@ export default function MarketsOverview({ refreshKey = 0, onOpen, nowMs = Date.n
         <div className="ov-table">
           <div className="ov-row ov-head">
             <span>Strumento</span>
-            <span className="ov-num">Ultimo</span>
-            <SortBtn col={COLS[3]} sort={sort} setSort={setSort} />
-            <span className="ov-num">Prob. salita</span>
-            <SortBtn col={COLS[2]} sort={sort} setSort={setSort} num />
-            <SortBtn col={COLS[0]} sort={sort} setSort={setSort} num />
-            <SortBtn col={COLS[1]} sort={sort} setSort={setSort} />
+            <span className="ov-num">Ultimo <InfoTip text={DH.ov_last.text} label={DH.ov_last.label} /></span>
+            <SortBtn col={COLS[3]} sort={sort} setSort={setSort} tip={DH.lean} />
+            <span className="ov-num">Prob. salita <InfoTip text={DH.implied_prob.text} label={DH.implied_prob.label} /></span>
+            <SortBtn col={COLS[2]} sort={sort} setSort={setSort} num tip={DH.expected_move} />
+            <SortBtn col={COLS[0]} sort={sort} setSort={setSort} num tip={DH.ov_divergence} />
+            <SortBtn col={COLS[1]} sort={sort} setSort={setSort} tip={DH.ov_next_event} />
           </div>
           {rows.map((r) => (
             <button key={r.symbol} className="ov-row" onClick={() => onOpen?.(r.symbol)} title={`Apri decision board ${r.name}`}>
@@ -76,13 +78,14 @@ export default function MarketsOverview({ refreshKey = 0, onOpen, nowMs = Date.n
   )
 }
 
-function SortBtn({ col, sort, setSort, num }) {
+function SortBtn({ col, sort, setSort, num, tip }) {
   const active = sort === col.key
   return (
     <span className={num ? 'ov-num' : ''}>
       <button className={active ? 'ov-sort-active' : ''} onClick={(e) => { e.stopPropagation(); setSort(col.key) }}>
         {col.label}{active ? ' ▾' : ''}
       </button>
+      {tip && <> <InfoTip text={tip.text} label={tip.label} /></>}
     </span>
   )
 }

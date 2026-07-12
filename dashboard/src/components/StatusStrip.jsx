@@ -2,6 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { evaluatePosition, pctOfAccount } from '../lib/risk'
 import { fmtNum, fmtPct, countdown } from '../lib/format'
 import { fetchLatestAnyBriefing } from '../api/data'
+import InfoTip from './InfoTip'
+import { RISK_HELP_BY_KEY as RH } from '../data/guide'
+
+// Short glossary for the strip's own metrics (kept local, no jargon left bare).
+const SS_TIP = {
+  pnl: { label: 'P&L aperto', text: 'Profitto/perdita NON realizzato delle posizioni reali aperte, ai prezzi correnti e col point value corretto. Cambia col prezzo; si realizza solo alla chiusura.' },
+  next: { label: 'Prossimo catalizzatore', text: 'Il prossimo evento ad alto impatto in calendario, col conto alla rovescia. Vicino a un evento le letture di condizioni possono ribaltarsi.' },
+  briefing: { label: 'Ultimo briefing', text: 'Il più recente briefing AI generato (tipo + titolo). Sintetizza le news, non prevede il mercato.' },
+}
 
 // At-a-glance signature strip: open P&L, portfolio heat vs limit (risk-toned),
 // active breach count, next high-impact catalyst, latest briefing title.
@@ -57,14 +66,14 @@ export default function StatusStrip({ positions, priceBySymbol, multiplierBySymb
   return (
     <section className="statusstrip" aria-label="Sintesi a colpo d'occhio">
       <div className={`ss-item ${pnlTone}`}>
-        <span className="ss-label">P&amp;L aperto</span>
+        <span className="ss-label">P&amp;L aperto <InfoTip text={SS_TIP.pnl.text} label={SS_TIP.pnl.label} /></span>
         <span className={`ss-value ${!m.pnlKnown ? 'muted' : m.pnl >= 0 ? 'pos' : 'neg'}`}>
           {m.pnlKnown ? fmtNum(m.pnl, 0) : '—'}
         </span>
       </div>
 
       <div className={`ss-item ${heatTone}`}>
-        <span className="ss-label">Heat portafoglio</span>
+        <span className="ss-label">Heat portafoglio <InfoTip text={RH.portfolio_heat.text} label={RH.portfolio_heat.label} /></span>
         <span className={`ss-value ${m.heatBreached ? 'neg' : heatRatio > 0.8 ? 'warn' : ''}`}>
           {m.heatPct != null ? fmtPct(m.heatPct) : '—'}
           <span className="ss-sub"> / {m.maxHeatPct || '—'}%</span>
@@ -72,12 +81,12 @@ export default function StatusStrip({ positions, priceBySymbol, multiplierBySymb
       </div>
 
       <div className={`ss-item ${m.breaches > 0 ? 'tone-neg' : ''}`}>
-        <span className="ss-label">Violazioni attive</span>
+        <span className="ss-label">Violazioni attive <InfoTip text={RH.breach.text} label={RH.breach.label} /></span>
         <span className={`ss-value ${m.breaches > 0 ? 'neg' : ''}`}>{m.breaches}</span>
       </div>
 
       <div className="ss-item">
-        <span className="ss-label">Prossimo catalizzatore</span>
+        <span className="ss-label">Prossimo catalizzatore <InfoTip text={SS_TIP.next.text} label={SS_TIP.next.label} /></span>
         <span className="ss-value sans">
           {m.next ? (
             <>
@@ -89,7 +98,7 @@ export default function StatusStrip({ positions, priceBySymbol, multiplierBySymb
       </div>
 
       <div className="ss-item">
-        <span className="ss-label">Ultimo briefing</span>
+        <span className="ss-label">Ultimo briefing <InfoTip text={SS_TIP.briefing.text} label={SS_TIP.briefing.label} /></span>
         <span className="ss-value sans" title={briefing?.title || ''}>
           {briefing ? `${briefing.kind} · ${briefing.title || ''}` : '—'}
         </span>

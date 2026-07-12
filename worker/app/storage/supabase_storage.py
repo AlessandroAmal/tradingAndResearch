@@ -97,6 +97,9 @@ class SupabaseStorage:
             q = q.eq("status", status)
         return q.execute().data or []
 
+    def update_position(self, position_id: str, fields: dict[str, Any]) -> None:
+        self._client.table("positions").update(fields).eq("id", position_id).execute()
+
     # --- risk settings --------------------------------------------
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         row = {**settings, "id": 1, "updated_at": "now()"}

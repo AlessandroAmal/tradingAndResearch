@@ -34,6 +34,7 @@ class Instrument:
     tradeable_on: str | None = None    # informational (where it can be traded)
     traded: bool = True                # False = display-only gauge (e.g. VIX)
     contract_multiplier: float = 1.0   # point value (futures/CFD/FX); default 1
+    themes: tuple[str, ...] = ()       # thematic tags for concentration warnings
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,11 @@ class AppConfig:
     def stop_atr_min_multiple(self) -> float:
         return float(self.risk.get("stop_atr_min_multiple", 1.5))
 
+    # --- event experiment (controlled macro-event study) -----------
+    @property
+    def experiment(self) -> dict[str, Any]:
+        return dict(self.raw.get("experiment", {}) or {})
+
     @property
     def set_aside_per_day(self) -> float:
         return float(self.risk.get("set_aside_per_day", 100.0))
@@ -173,6 +179,10 @@ class AppConfig:
     def decision_cron(self) -> str:
         # After prices/macro/options have refreshed.
         return os.getenv("DECISION_CRON", self.schedule.get("decision_cron", "0 0 * * *"))
+
+    @property
+    def experiment_cron(self) -> str:
+        return os.getenv("EXPERIMENT_CRON", self.schedule.get("experiment_cron", "*/5 * * * *"))
 
     @property
     def alert_cooldown_seconds(self) -> int:

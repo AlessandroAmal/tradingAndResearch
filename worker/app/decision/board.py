@@ -31,6 +31,30 @@ from . import fx_signals as fxs
 
 log = get_logger("decision.board")
 
+# Dual lens for single stocks — the same board, read two honest ways. Neither
+# produces a directional forecast (CLAUDE.md §1, §5).
+DUAL_LENSES = {
+    "holding": ("Come HOLDING (anni): contano i FONDAMENTALI (qualità, valutazione, "
+                "crescita, free cash flow). Il rumore di breve e i segnali tecnici "
+                "contano poco."),
+    "trade": ("Come TRADE (≤3 settimane): comanda l'EVENTO-UTILI e la notizia. I "
+              "fondamentali sono contesto GIÀ prezzato."),
+    "note": "Nessuna delle due lenti produce una previsione direzionale.",
+}
+
+# The 5 fixed sections, weighted 0..3 per instrument so every asset reads the same
+# way but with the RIGHT emphasis (gold→macro, stocks→fundamentals/news, …).
+# 0 = n/d, 1 = sfondo, 2 = secondario, 3 = primario. Config `sections` overrides.
+_SECTION_KEYS = ("macro", "technical", "news", "cyclicality", "fundamentals")
+
+
+def _section_emphasis(inst: dict) -> dict:
+    base = ({"macro": 1, "technical": 2, "news": 3, "cyclicality": 1, "fundamentals": 3}
+            if inst.get("fundamentals") else
+            {"macro": 3, "technical": 2, "news": 2, "cyclicality": 2, "fundamentals": 0})
+    override = inst.get("sections") or {}
+    return {k: int(override.get(k, base[k])) for k in _SECTION_KEYS}
+
 
 # --- macro driver resolution -----------------------------------------
 def _direction(latest: float | None, prev: float | None) -> str:
@@ -558,6 +582,21 @@ def run_decision_board(
                 within_hours=float(db_cfg.get("event_risk_hours", 72)))
             dollar = dollar_note(drivers, inst.get("dollar_sensitivity"))
 
+            # CICLICITÀ — seasonality over a long history (needs several years).
+            # Honest by construction (n, min-sample, data-snooping caveat).
+            seasonality = None
+            try:
+                from ..backtest.data import load_history
+                from ..providers.prices import build_price_provider
+                from .seasonality import compute_seasonality
+                pp = build_price_provider(cfg.providers.get("prices", "yfinance"))
+                sdf = load_history(symbol, pp, days=int(db_cfg.get("seasonality_history_days", 2600)))
+                s_dates = [d.date().isoformat() for d in sdf.index]
+                s_closes = [float(c) for c in sdf["close"]]
+                seasonality = compute_seasonality(s_dates, s_closes)
+            except Exception as exc:  # noqa: BLE001 — optional enrichment
+                log.warning("Seasonality failed for %s: %s", symbol, exc)
+
             # Full-picture (single stocks): ALL states side by side, NEVER fused.
             full_picture = None
             if fundamentals:
@@ -588,6 +627,14 @@ def run_decision_board(
                 "fundamentals": fundamentals,
                 "news": stock_news_items,
                 "full_picture": full_picture,
+                # Dual lens (single stocks): the SAME board reads differently as a
+                # multi-year holding vs a <=3-week trade. Honest: neither is a forecast.
+                "lenses": DUAL_LENSES if fundamentals else None,
+                "board_note": inst.get("board_note"),
+                "themes": list(inst.get("themes", []) or []),
+                "seasonality": seasonality,
+                "section_emphasis": _section_emphasis(inst),
+                "fundamentals_note": inst.get("fundamentals_note"),
                 "macro_freshness": {k: v for k, v in freshness.items() if k != "drivers"},
                 "attribution": attribution,
                 "event_risk": event_risk,

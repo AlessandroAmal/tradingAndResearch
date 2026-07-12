@@ -7,7 +7,7 @@ import InfoTip from '../components/InfoTip'
 import ConfluenceGauge from '../components/ConfluenceGauge'
 import { ProbBar, PercentileBar, RsiBar } from '../components/Indicators'
 import { MonitorTestForm, conditionsFromBoard } from '../components/PaperMonitor'
-import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH } from '../data/guide'
+import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH, FULLPIC_HELP_BY_KEY as FPH } from '../data/guide'
 
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
@@ -117,10 +117,12 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
       {board && <MacroFreshnessBanner mf={board.macro_freshness} />}
       {board && <AttributionBlock a={board.attribution} nowMs={nowMs} />}
       {board && <DollarNote note={board.dollar_note} />}
+      {board && <SectionGuide emphasis={board.section_emphasis} />}
 
       {board && board.fundamentals && (
         // SINGLE STOCK: company first (fundamentals/earnings/news), macro demoted.
         <>
+          <DualLens lenses={board.lenses} boardNote={board.board_note} />
           <FullPicturePanel fp={board.full_picture} />
           <FundamentalsPanel f={board.fundamentals} />
           <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
@@ -149,10 +151,136 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
           <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
           {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
           <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
+          <FundamentalsNote note={board.fundamentals_note} />
           <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
         </>
       )}
+
+      {/* Section 4 — CICLICITÀ: shown for every instrument, honest by construction. */}
+      {board && <SeasonalityPanel s={board.seasonality} />}
     </div>
+  )
+}
+
+// The 5 FIXED sections — same for every asset, weighted per instrument so the
+// reader knows which one counts most here. Weights are editorial emphasis, never
+// a score fused into a direction.
+const SECTIONS = [
+  { key: 'macro', label: 'Condizioni macro' },
+  { key: 'technical', label: 'Condizioni tecniche' },
+  { key: 'news', label: 'Narrativa & news' },
+  { key: 'cyclicality', label: 'Ciclicità' },
+  { key: 'fundamentals', label: 'Fondamentali' },
+]
+const EMPH = { 3: { t: 'primario', c: 'emph-3' }, 2: { t: 'secondario', c: 'emph-2' },
+  1: { t: 'sfondo', c: 'emph-1' }, 0: { t: 'n/d', c: 'emph-0' } }
+
+function SectionGuide({ emphasis }) {
+  if (!emphasis) return null
+  return (
+    <section className="panel section-guide">
+      <header className="panel-head">
+        <h2>Le 5 sezioni — dove guardare per questo asset</h2>
+        <span className="muted small">stesse sezioni per ogni strumento · affiancate, non sommate</span>
+      </header>
+      <div className="sg-grid">
+        {SECTIONS.map((s) => {
+          const lvl = emphasis[s.key] ?? 0
+          const e = EMPH[lvl] || EMPH[0]
+          return (
+            <div key={s.key} className={`sg-cell ${e.c}`}>
+              <span className="sg-label">{s.label}</span>
+              <span className="sg-badge">{e.t}</span>
+            </div>
+          )
+        })}
+      </div>
+      <p className="muted small caveat">Ogni sezione ha la sua etichetta e il suo orizzonte. Il peso indica quanto conta per QUESTO strumento — non è una previsione né un punteggio direzionale.</p>
+    </section>
+  )
+}
+
+// Section 4 — CICLICITÀ (seasonality). Honest: n always shown, sub-threshold =
+// insufficiente, fixed data-snooping caveat, "no significant pattern" stated.
+function SeasonalityPanel({ s }) {
+  if (!s) return null
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Ciclicità (stagionalità)
+          {' '}<InfoTip text={DH.seasonality.text} label={DH.seasonality.label} /></h2>
+        <span className="muted small">pattern ricorrenti · frequenza storica, non una previsione</span>
+      </header>
+      {!s.available ? (
+        <p className="honest-note">{s.note || 'Storico insufficiente per la stagionalità.'}</p>
+      ) : (
+        <>
+          {s.years != null && <p className="muted small">Storico ~{fmtNum(s.years, 1)} anni.</p>}
+          <SeasonRow title={`Per mese (soglia n≥${s.month_min})`} buckets={s.monthly} />
+          <SeasonRow title={`Per giorno della settimana (soglia n≥${s.weekday_min})`} buckets={s.weekday} />
+          {!s.any_significant && <p className="honest-note">{s.note}</p>}
+        </>
+      )}
+      <p className="muted small caveat">{s.caveat}</p>
+    </section>
+  )
+}
+
+function SeasonRow({ title, buckets }) {
+  return (
+    <>
+      <h3 className="ctx-h muted small">{title}</h3>
+      <div className="season-grid">
+        {(buckets || []).map((b) => (
+          <div key={b.key} className={`season-cell ${!b.sufficient ? 'insuff' : b.significant ? 'sig' : ''}`}>
+            <span className="season-lab">{b.label}</span>
+            <span className={`season-val ${b.mean_return == null ? 'muted' : signClass(b.mean_return)}`}>
+              {b.mean_return == null ? '—' : fmtPct(b.mean_return * 100)}
+            </span>
+            <span className="muted small">n={b.n}{!b.sufficient ? ' · insuff.' : b.significant ? ' · |t|>2' : ''}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// Section 5 (macro/commodity) — fundamentals are n/d or instrument-specific.
+function FundamentalsNote({ note }) {
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Fondamentali</h2>
+        <span className="muted small">non applicabili come per un'azienda</span>
+      </header>
+      <p className="muted small">{note || 'Non applicabile: per indici, FX e commodity non esistono fondamentali d’azienda (valutazione, utili). La lettura poggia su macro, tecnica e narrativa.'}</p>
+    </section>
+  )
+}
+
+// Dual lens — the SAME board reads differently as a holding vs a <=3-week trade.
+// Honest: neither lens is a directional forecast.
+function DualLens({ lenses, boardNote }) {
+  if (!lenses) return null
+  return (
+    <section className="panel dual-lens">
+      <header className="panel-head">
+        <h2>Due lenti — holding vs trade</h2>
+        <span className="muted small">lo stesso titolo, letto in due modi · nessuna previsione</span>
+      </header>
+      <div className="lens-grid">
+        <div className="lens-card">
+          <span className="lens-tag">📈 Holding (anni)</span>
+          <p>{lenses.holding}</p>
+        </div>
+        <div className="lens-card">
+          <span className="lens-tag">⏱ Trade (≤3 settimane)</span>
+          <p>{lenses.trade}</p>
+        </div>
+      </div>
+      {boardNote && <p className="honest-note">{boardNote}</p>}
+      <p className="muted small caveat">{lenses.note}</p>
+    </section>
   )
 }
 
@@ -781,7 +909,9 @@ function FullPicturePanel({ fp }) {
       <div className="fp-grid">
         {factors.map((x) => (
           <div key={x.key} className={`fp-cell tone-${x.tone || 'none'}`}>
-            <span className="fp-label">{x.label}</span>
+            <span className="fp-label">{x.label}
+              {FPH[x.key] && <> <InfoTip text={FPH[x.key].text} label={FPH[x.key].label} /></>}
+            </span>
             <span className="fp-state">{x.state}</span>
             <span className="fp-value muted small">{x.value}</span>
           </div>

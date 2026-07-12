@@ -160,6 +160,15 @@ def _cmd_decision(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_experiment(cfg, storage) -> int:
+    """Run one pass of the controlled event experiment (paper only, never orders)."""
+    from .experiment.job import run_event_experiment
+    provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    res = run_event_experiment(cfg, storage, provider)
+    log.info("Event experiment: %s", res)
+    return 0
+
+
 def _cmd_backtest(cfg, storage, args) -> int:
     provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
     if args.scan:
@@ -250,6 +259,7 @@ COMMANDS = {
     "alerts": _cmd_alerts,
     "macro": _cmd_macro,
     "decision": _cmd_decision,
+    "experiment": _cmd_experiment,
     "api": _cmd_api,
     "run": _cmd_run,
 }

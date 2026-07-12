@@ -174,7 +174,7 @@ button.ghost.small { padding: 3px 9px; font-size: var(--fs-sm); }
 .statusstrip {
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
   gap: 1px; background: var(--line); border: 1px solid var(--line);
-  border-radius: var(--r); overflow: hidden; margin-bottom: 16px;
+  border-radius: var(--r); overflow: visible; margin-bottom: 16px;
 }
 .ss-item { background: var(--surface); padding: 10px 14px; min-width: 0; }
 .ss-label {
@@ -382,7 +382,7 @@ input[type="number"] { font-family: var(--mono); }
   border: 1px solid var(--line);
 }
 .infotip-bubble {
-  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30;
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 200;
   width: max-content; max-width: 280px; padding: 9px 11px;
   background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong);
   border-radius: var(--r-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -555,6 +555,36 @@ ul.tight li { margin: 2px 0; }
   font-size: var(--fs-xs); letter-spacing: 0.03em; }
 .stale-badge { color: var(--warn); font-weight: 600; }
 
+/* dual lens — holding vs <=3-week trade, side by side */
+.lens-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.lens-card { background: var(--surface-2); border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: var(--r-sm); padding: 10px 12px; }
+.lens-card:nth-child(1) { border-left-color: var(--pos); }
+.lens-card:nth-child(2) { border-left-color: var(--warn); }
+.lens-tag { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.lens-card p { margin: 4px 0 0; font-size: var(--fs-sm); line-height: 1.4; }
+
+/* the 5 fixed sections — emphasis guide (which counts most for this asset) */
+.sg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.sg-cell { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
+  background: var(--surface-2); border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r-sm); }
+.sg-label { font-size: var(--fs-sm); font-weight: 600; }
+.sg-badge { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.sg-cell.emph-3 { border-left-color: var(--accent, var(--pos)); }
+.sg-cell.emph-3 .sg-badge { color: var(--accent, var(--pos)); font-weight: 700; }
+.sg-cell.emph-2 { border-left-color: var(--line-strong); }
+.sg-cell.emph-1 { border-left-color: var(--line); opacity: 0.85; }
+.sg-cell.emph-0 { border-left-color: var(--line); opacity: 0.55; }
+
+/* seasonality (ciclicità) — n always visible; sub-threshold dimmed */
+.season-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.season-cell { display: flex; flex-direction: column; gap: 1px; align-items: center; text-align: center;
+  padding: 6px 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.season-cell.insuff { opacity: 0.5; }
+.season-cell.sig { border-color: var(--warn); }
+.season-lab { font-size: var(--fs-xs); text-transform: uppercase; color: var(--muted); }
+.season-val { font-size: var(--fs-md); font-weight: 700; }
+
 .briefing-actions { display: flex; align-items: center; gap: 8px; }
 
 /* =====================================================================
@@ -605,7 +635,7 @@ ul.tight li { margin: 2px 0; }
 @media (max-width: 720px) { .synth-top { grid-template-columns: 1fr; } }
 
 /* Panoramica — instrument overview table (rows are buttons -> decision board) */
-.ov-table { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.ov-table { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: visible; }
 .ov-row { display: grid; grid-template-columns: 1.3fr 0.7fr 1.4fr 0.9fr 0.9fr 0.9fr 1.6fr; gap: 12px; align-items: center;
   background: var(--bg-panel); border: 0; border-radius: 0; padding: 9px 12px; text-align: left; cursor: pointer;
   font: inherit; color: var(--text-primary); width: 100%; }

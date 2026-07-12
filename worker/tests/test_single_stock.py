@@ -108,3 +108,75 @@ def test_filter_events_symbol_scoped():
     assert "NVIDIA earnings" in nv and "FOMC decision" in nv and "Tesla earnings" not in nv
     gg = [e["title"] for e in board._filter_events(events, ["FOMC"], "GOOGL", 6)]
     assert gg == ["FOMC decision"]   # other stocks' earnings never leak in
+
+
+# =====================================================================
+# Book holdings — MSFT/AVGO/VRT/NVO/SPGI reuse the single-stock template.
+# =====================================================================
+BOOK = ("MSFT", "AVGO", "VRT", "NVO", "SPGI")
+
+
+def test_book_holdings_use_single_stock_template():
+    insts = _insts()
+    for sym in BOOK:
+        i = insts[sym]
+        assert i["options_proxy"] == sym          # proxy = the stock itself
+        assert "positioning" not in i             # COT OFF on single names
+        assert i.get("earnings") is True and i.get("fundamentals") is True
+        drivers = {d["id"] for d in i["macro_drivers"]}
+        assert drivers == {"DFII10", "^VIX"}      # macro = background only
+        assert all(d["weight"] <= 0.3 for d in i["macro_drivers"])  # low weight
+        assert "cot" not in i["synthesis"]["weights"]
+
+
+def test_book_holdings_themes_and_notes():
+    insts = _insts()
+    assert insts["MSFT"]["themes"] == ["ai_datacenter"]
+    assert "ai_datacenter" in insts["AVGO"]["themes"] and "semis" in insts["AVGO"]["themes"]
+    assert insts["VRT"]["themes"] == ["ai_datacenter"]
+    assert insts["NVO"]["themes"] == ["pharma"]
+    assert insts["SPGI"]["themes"] == ["financials"]
+    # idiosyncratic / defensive names carry a UI note; NVO's macro weight is tiny.
+    for sym in ("VRT", "NVO", "SPGI"):
+        assert insts[sym].get("board_note")
+    assert all(d["weight"] <= 0.15 for d in insts["NVO"]["macro_drivers"])  # macro ~irrelevant
+
+
+def test_book_holdings_in_universe_with_themes():
+    from app.config import load_config
+    uni = {i.symbol: i for i in load_config().universe}
+    for sym in BOOK:
+        assert sym in uni and uni[sym].asset_class == "equity" and uni[sym].themes
+
+
+def test_dual_lenses_are_honest_no_direction():
+    from app.decision.board import DUAL_LENSES
+    assert {"holding", "trade", "note"} <= set(DUAL_LENSES)
+    assert "FONDAMENTALI" in DUAL_LENSES["holding"] and "UTILI" in DUAL_LENSES["trade"]
+    blob = " ".join(DUAL_LENSES.values()).lower()
+    for word in ("comprare", "vendere", "salirà", "scenderà", "% di salita"):
+        assert word not in blob                    # no directional call
+    assert "previsione" in DUAL_LENSES["note"].lower()
+
+
+# =====================================================================
+# The 5 fixed sections — per-instrument emphasis (config override + default).
+# =====================================================================
+def test_section_emphasis_defaults_and_overrides():
+    from app.decision.board import _section_emphasis, _SECTION_KEYS
+    insts = _insts()
+    # every instrument exposes all 5 sections
+    for sym in ("GC=F", "NVDA", "^NDX", "HG=F", "NVO"):
+        emp = _section_emphasis(insts[sym])
+        assert set(emp) == set(_SECTION_KEYS)
+        assert all(0 <= v <= 3 for v in emp.values())
+    # stock default: fundamentals + news primary, macro background
+    nv = _section_emphasis(insts["NVDA"])
+    assert nv["fundamentals"] == 3 and nv["news"] == 3 and nv["macro"] == 1
+    # macro instrument default: macro primary, no company fundamentals
+    au = _section_emphasis(insts["GC=F"])
+    assert au["macro"] == 3 and au["fundamentals"] == 0
+    # config overrides: NVO macro~off + fundamentals primary; copper news primary
+    nvo = _section_emphasis(insts["NVO"])
+    assert nvo["macro"] == 0 and nvo["fundamentals"] == 3
+    assert _section_emphasis(insts["HG=F"])["news"] == 3

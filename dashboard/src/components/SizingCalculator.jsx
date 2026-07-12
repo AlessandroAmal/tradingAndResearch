@@ -6,7 +6,7 @@ import { RISK_HELP_BY_KEY, FIELD_HELP_BY_KEY } from '../data/guide'
 
 // Position-sizing calculator: entry/stop/risk% [+ instrument] -> size.
 // Pure read-only math — it suggests a size, it does NOT place anything.
-export default function SizingCalculator({ instruments, settings }) {
+export default function SizingCalculator({ instruments, settings, priceBySymbol }) {
   const accountFromSettings = Number(settings?.account_size) || 0
   const defaultRisk = settings?.max_risk_per_trade_pct ?? 1
 
@@ -21,6 +21,9 @@ export default function SizingCalculator({ instruments, settings }) {
     const inst = instruments.find((i) => i.symbol === symbol)
     return Number(inst?.contract_multiplier) || 1
   }, [instruments, symbol])
+
+  // Live last price of the selected instrument (from the shared price map).
+  const currentPrice = symbol ? (priceBySymbol?.[symbol] ?? null) : null
 
   const acct = Number(account) || accountFromSettings
   const r = Number(riskPct)
@@ -52,6 +55,17 @@ export default function SizingCalculator({ instruments, settings }) {
             ))}
           </select>
         </label>
+        {symbol && (
+          <label>Prezzo attuale
+            <span className="size-row">
+              <input type="text" readOnly value={currentPrice == null ? 'n/d' : fmtNum(currentPrice, 2)} />
+              <button type="button" className="ghost small" disabled={currentPrice == null}
+                onClick={() => setEntry(String(currentPrice))} title="Usa il prezzo attuale come entry">
+                usa come entry
+              </button>
+            </span>
+          </label>
+        )}
         <label>
           Account
           <input type="number" step="any" min="0" value={account}
@@ -78,6 +92,7 @@ export default function SizingCalculator({ instruments, settings }) {
             onChange={(ev) => setTarget(ev.target.value)} />
         </label>
       </form>
+      <p className="muted small">Rischio % predefinito da <code>config.yaml</code> ({fmtNum(defaultRisk, 1)}%); modificabile qui sopra. Il cockpit è read-only: non c’è una schermata impostazioni.</p>
 
       <div className="stat-grid">
         <Stat label="Suggested size" value={size == null ? '—' : fmtNum(size, 2)} big />

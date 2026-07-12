@@ -34,3 +34,12 @@ class PriceProvider(Protocol):
         without signalling.
         """
         ...
+
+    def latest_price(self, symbol: str) -> float | None:
+        """Latest available price (near-live), or None on failure.
+
+        Used by the event experiment to stamp intraday entry/exit prices. Free
+        sources are delayed and thin near data releases — the caller labels this
+        (t+5min prices are optimistic if spread/slippage isn't modelled).
+        """
+        ...

@@ -20,6 +20,8 @@ import KeyFigures from './components/KeyFigures'
 import StatusStrip from './components/StatusStrip'
 import MarketsOverview from './components/MarketsOverview'
 import { PaperPositions } from './components/PaperMonitor'
+import ConcentrationWarning from './components/ConcentrationWarning'
+import ExperimentResults from './pages/ExperimentResults'
 import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
@@ -149,7 +151,9 @@ export default function App() {
 
   // Paper (test) positions are separate from real risk: they NEVER count in heat.
   const realPositions = useMemo(() => positions.filter((p) => !p.paper), [positions])
-  const paperPositions = useMemo(() => positions.filter((p) => p.paper), [positions])
+  // Manual paper positions EXCLUDE the auto experiment ones (kept separate so
+  // the experiment can't pollute the review of the user's own process).
+  const paperPositions = useMemo(() => positions.filter((p) => p.paper && !p.experiment), [positions])
   // Recently closed (real + paper) — the discipline guards look at both.
   const recentClosed = useMemo(() => closedPositions || [], [closedPositions])
 
@@ -257,6 +261,7 @@ export default function App() {
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
             {tradingTabBtn('decision', 'Decision board')}
             {tradingTabBtn('backtest', 'Ricerca')}
+            {tradingTabBtn('experiment', 'Esperimento eventi')}
             {tradingTabBtn('journal', 'Journal')}
             {tradingTabBtn('options', 'Options')}
             {tradingTabBtn('alerts', 'Alert')}
@@ -276,7 +281,7 @@ export default function App() {
               />
               <main className="grid grid-trading">
                 <div className="col-left">
-                  <SizingCalculator instruments={instruments} settings={riskSettings} />
+                  <SizingCalculator instruments={instruments} settings={riskSettings} priceBySymbol={priceBySymbol} />
                   <TradeGate
                     instruments={instruments}
                     settings={riskSettings}
@@ -289,6 +294,12 @@ export default function App() {
                   />
                 </div>
                 <div className="col-main">
+                  <ConcentrationWarning
+                    positions={realPositions}
+                    priceBySymbol={priceBySymbol}
+                    multiplierBySymbol={multiplierBySymbol}
+                    instruments={instruments}
+                  />
                   <section className="panel">
                     <header className="panel-head">
                       <h2>Posizioni aperte (reali)</h2>
@@ -352,6 +363,20 @@ export default function App() {
                 ]}
                 onGuide={() => setPrimary('guida')} />
               <Backtest />
+            </>
+          )}
+
+          {tradingTab === 'experiment' && (
+            <>
+              <TabHeader title="Esperimento eventi (paper)"
+                purpose="Esperimento controllato: apre posizioni di TEST ai vari ritardi dopo i dati USA per MISURARE cosa succede. Read-only, mai un ordine, mai un segnale."
+                howto={[
+                  'n sempre visibile; sotto soglia = campione insufficiente, non una probabilità.',
+                  'Confronta i ritardi (subito vs aspettare) e la direzione della sorpresa.',
+                  'Separato dal rischio reale e dalle tue paper manuali.',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <ExperimentResults refreshKey={refreshKey} nowMs={nowMs} />
             </>
           )}
 

@@ -26,11 +26,19 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
             "tradeable_on": i.tradeable_on,
             "traded": i.traded,
             "contract_multiplier": i.contract_multiplier,
+            "themes": list(i.themes) if i.themes else None,
             "is_active": True,
         }
         for i in cfg.universe
     ]
-    storage.upsert_instruments(instruments)
+    try:
+        storage.upsert_instruments(instruments)
+    except Exception as exc:  # noqa: BLE001 — `themes` column missing (pre-0017)?
+        log.warning("Instruments upsert failed (%s); retrying without themes "
+                    "(apply migration 0017 for concentration tags)", exc)
+        for row in instruments:
+            row.pop("themes", None)
+        storage.upsert_instruments(instruments)
 
     # Risk settings: config.yaml is the source of truth; mirror it into the
     # DB so the dashboard can read account size + limits (no browser storage).

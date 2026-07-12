@@ -23,7 +23,7 @@ export const FIELD_HELP_BY_KEY = byKey(FIELD_HELP)
 
 // --- Risk concepts (sizing tooltips + §5) -----------------------------
 export const RISK_HELP = [
-  { key: 'risk_per_trade', label: 'Rischio per trade', text: 'Quanto perdi se lo stop viene colpito, in valuta e come % del conto. Il tuo limite (es. 1–2%) è in impostazioni.' },
+  { key: 'risk_per_trade', label: 'Rischio per trade', text: 'Quanto perdi se lo stop viene colpito, in valuta e come % del conto. Il valore predefinito (es. 1–2%) arriva dal file di configurazione (config.yaml → risk.max_risk_per_trade_pct): il cockpit è read-only, non c’è una schermata impostazioni. Puoi comunque digitare una % diversa direttamente nel campo “Rischio %”.' },
   { key: 'r_multiple', label: 'R-multiple (R:R)', text: 'Rapporto rischio/rendimento: |target − entry| ÷ |entry − stop|. Un R:R di 3 = punti a guadagnare 3 volte quanto rischi.' },
   { key: 'portfolio_heat', label: 'Portfolio heat', text: 'La somma di tutti i rischi aperti contemporaneamente: il rischio totale acceso sul conto. Il limite di heat evita che tante posizioni sommate ti espongano troppo.' },
   { key: 'position_sizing', label: 'Position sizing', text: 'Il calcolo inverso: dato entry, stop e il rischio% massimo, il sistema ti dice quanto comprare. Così il rischio guida la size, non l’istinto.' },
@@ -75,6 +75,10 @@ export const DECISION_HELP = [
   { key: 'lean', label: 'Lettura direzionale (lean)', text: 'Sintesi pesata dei fattori su scala -100..+100 con un’etichetta (es. “moderatamente ribassista”). NON è una percentuale di salita/discesa: è solo il grado di allineamento delle condizioni attuali. I fattori sono deboli e dipendono dal regime.' },
   { key: 'factor_breakdown', label: 'Dettaglio per fattore', text: 'Ogni fattore con il suo stato (rialzista/ribassista/neutro), tipo (direzionale o contesto) e peso. I fattori di contesto (volatilità, streak, rischio evento) non spingono il lean. Se un dato manca, il fattore è escluso, non indovinato.' },
   { key: 'divergence', label: 'Condizioni ↔ mercato', text: 'Confronta la lettura delle condizioni con la probabilità IMPLICITA nelle opzioni (gli odds del mercato). Se le condizioni sono direzionali ma il mercato è ~neutro, il movimento potrebbe essere già prezzato. L’unica probabilità del futuro resta quella implicita, non la lettura.' },
+  { key: 'ov_divergence', label: 'Divergenza (panoramica)', text: 'Quanto la lettura delle CONDIZIONI (la lancetta di confluenza, riportata a −1..+1) si discosta dal lean del MERCATO ricavato dagli odds impliciti (= (prob. salita − 0,5)×2). È un numero 0–2: più alto = condizioni e mercato sono più in disaccordo (≥0,60 è evidenziato). Serve a decidere DOVE GUARDARE — dove approfondire la tensione — NON è una probabilità di successo né un segnale. L’unica probabilità del futuro resta quella implicita.' },
+  { key: 'ov_last', label: 'Ultimo', text: 'Ultimo prezzo noto dello strumento (dall’ultimo aggiornamento dati). Non in tempo reale al tick.' },
+  { key: 'ov_next_event', label: 'Prossimo evento', text: 'Il prossimo catalizzatore in calendario per lo strumento, col conto alla rovescia. Ordinando per “Evento” metti in cima ciò che è più vicino. Vicino a un evento la lettura di condizioni può ribaltarsi.' },
+  { key: 'seasonality', label: 'Ciclicità (stagionalità)', text: 'Pattern ricorrenti nel calendario: rendimento medio per mese e per giorno della settimana, con n SEMPRE visibile. La stagionalità è il regno del data-snooping: con abbastanza fette temporali qualcosa sembra sempre ciclico. Sotto la soglia di campione → “insufficiente”, nessuna conclusione. Il flag |t|>2 non corregge i test multipli. È frequenza storica, NON una previsione.' },
 ]
 export const DECISION_HELP_BY_KEY = byKey(DECISION_HELP)
 
@@ -100,6 +104,20 @@ export const FX_HELP = [
   { key: 'cot', label: 'Posizionamento COT', text: 'Posizione netta dei Leveraged Funds (COT della CFTC) sul future EUR, come percentile su ~3 anni. >90° = molto long → rischio reversal; <10° = molto short → rischio squeeze; in mezzo poco segnale. Ritardo martedì→venerdì, utile come contrarian solo agli estremi, segnale di swing non intraday.' },
 ]
 export const FX_HELP_BY_KEY = byKey(FX_HELP)
+
+// --- "Quadro completo" (single stocks): one tip per factor chip -------
+// Keys MUST match the factor keys emitted by worker full_picture.py.
+export const FULLPIC_HELP = [
+  { key: 'valuation', label: 'Valutazione', text: 'Quanto paghi l’azienda: P/E (prezzo/utili), P/S (prezzo/ricavi), P/B (prezzo/patrimonio), e dove sta il P/E rispetto alla propria storia (percentile). “Cara/economica” è descrittivo — già riflesso nel prezzo — NON una direzione da seguire.' },
+  { key: 'growth', label: 'Crescita', text: 'Variazione anno-su-anno di ricavi e utili. In crescita/in calo è un fatto sull’azienda, non una previsione del prezzo.' },
+  { key: 'quality', label: 'Qualità', text: 'Redditività dell’azienda: margine netto e ROE (return on equity). Margini alti/ROE alto = azienda più efficiente; è contesto, non un segnale.' },
+  { key: 'cash', label: 'Cassa / bilancio', text: 'Solidità finanziaria: free cash flow (cassa generata al netto degli investimenti) e debt/equity (debito rispetto al patrimonio). FCF positivo e poco debito = più solida.' },
+  { key: 'earnings_risk', label: 'Rischio utili', text: 'Giorni al prossimo report trimestrale + storico delle sorprese (beat/miss). Vicino agli utili la volatilità sale e la lettura di condizioni può ribaltarsi.' },
+  { key: 'macro', label: 'Contesto macro (sfondo)', text: 'Il lean dei SOLI driver macro (tassi, VIX) per il titolo. Per un’azione è sfondo: conta più l’azienda e la notizia.' },
+  { key: 'technical', label: 'Contesto tecnico (sfondo)', text: 'Posizione rispetto alle medie mobili, RSI e streak. Contesto debole: un movimento esteso spesso CONTINUA, non si inverte.' },
+  { key: 'skew', label: 'Skew (opzioni)', text: 'Skew / risk reversal delle opzioni: confronta il costo (volatilità implicita) delle PUT contro le CALL sullo stesso titolo. Put più care = bias ribassista (dove si concentrano coperture e flussi); call più care = bias rialzista. Indica DOVE si posiziona il mercato delle opzioni, NON è una previsione; se la smile è rada è poco affidabile e non pesa nel lean.' },
+]
+export const FULLPIC_HELP_BY_KEY = byKey(FULLPIC_HELP)
 
 // helpers to build definition lists from the keyed dicts (same texts as tooltips)
 const dl = (dict, keys) => keys.map((k) => ({ term: dict[k].label, def: dict[k].text }))
@@ -265,6 +283,9 @@ export const GUIDE_SECTIONS = [
       { type: 'h', text: 'Sintesi (lettura di confluenza)' },
       { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['confluence_read', 'lean', 'factor_breakdown', 'divergence']) },
       { type: 'note', text: 'La lettura è l’allineamento delle condizioni ATTUALI, NON una probabilità: per questo non vedrai mai un “X% sale/scende” calcolato da noi. L’unica probabilità del futuro mostrata è quella IMPLICITA nei prezzi delle opzioni (gli odds del mercato). Il confronto condizioni↔mercato è l’output più utile: se le condizioni puntano da una parte ma il mercato è ~neutro, spesso il movimento è già prezzato.' },
+      { type: 'h', text: 'Panoramica strumenti (schermata Mercati)' },
+      { type: 'p', text: 'La tabella “Strumenti — panoramica” mette a confronto tutti gli strumenti in un colpo d’occhio e si ordina per DOVE GUARDARE, non per “probabilità di successo”. Ogni colonna ha la sua spiegazione (icona i). Colonne: Ultimo prezzo · Confluenza (lancetta delle condizioni) · Prob. salita (implicita, calibrata) · Movimento atteso (±) · Divergenza · prossimo Evento.' },
+      { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['ov_divergence', 'ov_last', 'ov_next_event']) },
       { type: 'h', text: 'Confluenza' },
       { type: 'p', text: 'Tutte le condizioni con il loro stato: tasso reale ↑/↓, dollaro ↑/↓, streak, posizione vs MA, RSI, ATR, prossimo evento. Favorevole/contrario riflette il contesto storico per quello strumento (es. tasso reale in salita = vento contrario per l’oro), non una raccomandazione.' },
       { type: 'h', text: 'Misure tecniche' },
@@ -276,6 +297,9 @@ export const GUIDE_SECTIONS = [
       { type: 'dl', items: dl(DECISION_HELP_BY_KEY, ['implied_prob', 'expected_move']) },
       { type: 'h', text: 'Segnali FX da desk (EUR/USD)' },
       { type: 'dl', items: dl(FX_HELP_BY_KEY, ['skew', 'expected_move_event', 'event_behaviour', 'cot']) },
+      { type: 'h', text: 'Quadro completo (titoli singoli)' },
+      { type: 'p', text: 'Per NVDA/TSLA/GOOGL il board mostra un “quadro completo” con tutti i fattori affiancati, ognuno col suo stato — NON sommati in un punteggio. Il numero integrato di tutto-insieme è la probabilità implicita; l’integrazione qualitativa è l’analisi AI.' },
+      { type: 'dl', items: dl(FULLPIC_HELP_BY_KEY, ['valuation', 'growth', 'quality', 'cash', 'earnings_risk', 'macro', 'technical', 'skew']) },
       { type: 'h', text: 'Sintesi AI (opzionale)' },
       { type: 'p', text: 'Quando attiva, mette in parole il setup e segnala le tensioni e l’incertezza. Per regola NON fa mai una chiamata direzionale (sale/scende, compra/vendi): descrive le condizioni, non predice.' },
     ],

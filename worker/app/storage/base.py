@@ -55,6 +55,10 @@ class Storage(Protocol):
     def list_positions(self, status: str | None = None) -> list[dict[str, Any]]:
         ...
 
+    def update_position(self, position_id: str, fields: dict[str, Any]) -> None:
+        """Patch a position row (e.g. close an experiment paper position)."""
+        ...
+
     # --- risk settings (M6; seeded from config for the dashboard) --
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         """Upsert the singleton risk-settings row (id = 1)."""

@@ -39,6 +39,7 @@ from .ingestion.macro_job import run_macro_ingestion
 from .ingestion.prices_job import run_prices_ingestion
 from .ingestion.seed import seed_universe_and_holdings
 from .decision import run_decision_board
+from .experiment.job import run_event_experiment
 from .logging_setup import get_logger, setup_logging
 from .providers.calendar import build_calendar_provider
 from .providers.macro import build_macro_provider
@@ -150,6 +151,11 @@ def refresh() -> dict[str, Any]:
         if cfg.decision_board_enabled:
             _run_step(steps, "decision_board", lambda: run_decision_board(
                 cfg, storage, build_options_provider(cfg.options_provider), ai=None))
+
+        # 5) advance the event experiment (paper only — never an order)
+        if cfg.experiment.get("enabled", False):
+            _run_step(steps, "experiment", lambda: run_event_experiment(
+                cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance"))))
 
         failed = sum(1 for s in steps.values() if s.get("status") == "error")
         log.info("Refresh complete (%d step errors)", failed)

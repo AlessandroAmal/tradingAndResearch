@@ -46,6 +46,14 @@ export async function fetchPositions(status = 'open') {
   return q
 }
 
+// Event-experiment paper positions (open + closed), separate from real risk and
+// from the user's own manual paper positions.
+export async function fetchExperimentPositions(limit = 2000) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('positions').select('*').eq('experiment', true)
+    .order('opened_at', { ascending: false }).limit(limit)
+}
+
 export async function insertPosition(position) {
   if (!isConfigured) return NOT_CONFIGURED
   return supabase.from('positions').insert(position).select().single()

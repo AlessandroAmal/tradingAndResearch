@@ -37,7 +37,7 @@ def client(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
     # Stub every worker job + provider builder so /refresh does real flow, no I/O.
     for name in ("run_prices_ingestion", "run_macro_ingestion",
-                 "run_calendar_ingestion", "run_decision_board"):
+                 "run_calendar_ingestion", "run_decision_board", "run_event_experiment"):
         monkeypatch.setattr(api, name, lambda *a, **k: {"ok": 1, "failed": 0})
     monkeypatch.setattr(api, "seed_universe_and_holdings", lambda *a, **k: None)
     for name in ("build_price_provider", "build_macro_provider",

@@ -47,6 +47,29 @@ class YFinancePriceProvider(PriceProvider):
         log.debug("Fetched %d bars for %s", len(bars), symbol)
         return bars
 
+    def latest_price(self, symbol: str) -> float | None:
+        """Near-live price via fast_info, falling back to the last 1m/1d close."""
+        try:
+            t = yf.Ticker(symbol)
+            fi = getattr(t, "fast_info", None)
+            if fi is not None:
+                for key in ("last_price", "lastPrice", "regular_market_price"):
+                    try:
+                        v = _num(fi.get(key)) if hasattr(fi, "get") else _num(fi[key])
+                    except (KeyError, TypeError):
+                        v = None
+                    if v:
+                        return v
+            intraday = t.history(period="1d", interval="1m", auto_adjust=False)
+            if intraday is not None and not intraday.empty:
+                return _num(intraday["Close"].iloc[-1])
+            daily = t.history(period="5d", interval="1d", auto_adjust=False)
+            if daily is not None and not daily.empty:
+                return _num(daily["Close"].iloc[-1])
+        except Exception as exc:  # noqa: BLE001 — never crash the experiment
+            log.warning("latest_price(%s) failed: %s", symbol, exc)
+        return None
+
 
 def _num(v: object) -> float | None:
     try:

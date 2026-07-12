@@ -36,7 +36,14 @@ log = get_logger("scheduler")
 
 
 def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
-    sched = BlockingScheduler()
+    # On a personal Mac the process is SUSPENDED while asleep, so cron fire times
+    # (e.g. the 06:30 morning briefing) are routinely missed. Without a grace
+    # window APScheduler's default (1s) silently DROPS them — which is why the
+    # briefings got stuck. `misfire_grace_time=None` = run the missed occurrence
+    # when the machine wakes; `coalesce=True` collapses multiple misses into one.
+    sched = BlockingScheduler(
+        job_defaults={"coalesce": True, "misfire_grace_time": None, "max_instances": 1}
+    )
     price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
     cal_provider = build_calendar_provider(cfg.providers.get("calendar", "fmp"), cfg)
     news_providers = build_news_providers(cfg)
@@ -195,6 +202,20 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         sched.add_job(
             _decision, CronTrigger.from_crontab(cfg.decision_cron),
             id="decision_board", max_instances=1, coalesce=True,
+        )
+
+    # --- event experiment (M-exp) — paper only, never an order ---------
+    if cfg.experiment.get("enabled", False):
+        def _experiment() -> None:
+            try:
+                from .experiment.job import run_event_experiment
+                run_event_experiment(cfg, storage, price_provider)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Event experiment job crashed: %s", exc)
+
+        sched.add_job(
+            _experiment, CronTrigger.from_crontab(cfg.experiment_cron),
+            id="event_experiment", max_instances=1, coalesce=True,
         )
 
     log.info(

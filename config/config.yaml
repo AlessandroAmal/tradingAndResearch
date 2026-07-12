@@ -84,21 +84,56 @@ universe:
     asset_class: fx
     sleeve: macro
     tradeable_on: "Fineco (CFD)"
-  # Equities (CEO tracciati)
+  # Equities (CEO tracciati). `themes` = tag tematici per l'avviso di
+  # concentrazione (posizioni sullo stesso tema sono correlate, non diversificate).
   - symbol: "NVDA"
     name: "NVIDIA"
     asset_class: equity
     sleeve: equity
+    themes: ["ai_datacenter"]
     tradeable_on: "CFD/equity; opzioni reali via IBKR"
   - symbol: "TSLA"
     name: "Tesla"
     asset_class: equity
     sleeve: equity
+    themes: ["ev"]
     tradeable_on: "CFD/equity; opzioni reali via IBKR"
   - symbol: "GOOGL"
     name: "Alphabet"
     asset_class: equity
     sleeve: equity
+    themes: ["ai_datacenter"]
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  # Book holdings — mega-cap AI/data-center + idiosincratici (NVO, SPGI)
+  - symbol: "MSFT"
+    name: "Microsoft"
+    asset_class: equity
+    sleeve: equity
+    themes: ["ai_datacenter"]
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "AVGO"
+    name: "Broadcom"
+    asset_class: equity
+    sleeve: equity
+    themes: ["ai_datacenter", "semis"]
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "VRT"
+    name: "Vertiv"
+    asset_class: equity
+    sleeve: equity
+    themes: ["ai_datacenter"]
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "NVO"
+    name: "Novo Nordisk ADR"
+    asset_class: equity
+    sleeve: equity
+    themes: ["pharma"]
+    tradeable_on: "CFD/equity; opzioni reali via IBKR"
+  - symbol: "SPGI"
+    name: "S&P Global"
+    asset_class: equity
+    sleeve: equity
+    themes: ["financials"]
     tradeable_on: "CFD/equity; opzioni reali via IBKR"
   # China / commodities
   - symbol: "HG=F"
@@ -159,6 +194,7 @@ schedule:
   alerts_cron: "*/10 * * * *"           # alert evaluation every 10 min (M8)
   macro_cron: "30 22 * * *"             # FRED macro series: once/day (M9)
   decision_cron: "0 0 * * *"            # decision board assembly: after macro/options (M9)
+  experiment_cron: "*/5 * * * *"        # event experiment: opens/closes paper at delays (every 5 min)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:
@@ -304,6 +340,16 @@ figures:
     keywords: ["Sundar Pichai", "Google", "Alphabet"]
     match_terms: ["Sundar Pichai", "Pichai"]
     context_terms: ["google", "alphabet", "ai", "gemini", "search", "antitrust"]
+  - name: "Satya Nadella"
+    role: "Microsoft CEO"
+    keywords: ["Satya Nadella", "Microsoft", "Azure"]
+    match_terms: ["Satya Nadella", "Nadella"]
+    context_terms: ["microsoft", "azure", "ai", "copilot", "openai", "cloud", "capex", "data center"]
+  - name: "Hock Tan"
+    role: "Broadcom CEO"
+    keywords: ["Hock Tan", "Broadcom"]
+    match_terms: ["Hock Tan"]
+    context_terms: ["broadcom", "ai", "networking", "semiconductor", "chip", "chips", "vmware", "custom silicon"]
   - name: "China policy"
     role: "PBoC / State Council"
     keywords: ["China policy", "PBoC", "Politburo", "State Council"]
@@ -332,6 +378,29 @@ options:
     "SI=F": SLV
     "HG=F": CPER
     "NG=F": UNG
+
+# --- Event experiment (controlled macro-event study) -----------------
+# Opens HYPOTHETICAL (paper) positions at several delays after key US data
+# releases, both directions, to MEASURE what happens — NEVER an order, never a
+# signal. Flagged experiment=true, separate from real positions AND from your own
+# manual paper positions. Volume note: entries = |instruments| × |delays| ×
+# |horizons| × |directions| per event (defaults -> 3×4×3×2 = 72 paper rows/event);
+# trim the lists or set enabled:false to reduce.
+experiment:
+  enabled: true
+  # Key US macro releases to track (matched against event titles).
+  event_keywords: ["Nonfarm Payrolls", "Unemployment", "CPI", "PCE", "FOMC",
+                   "rate decision", "Interest Rate", "FOMC Minutes", "Powell"]
+  # Instruments to open paper positions on (must be in the universe).
+  instruments: ["GC=F", "EURUSD=X", "^NDX"]
+  # Entry delays after the release (minutes): t+5m, t+30m, t+2h, t+1d.
+  delays_min: [5, 30, 120, 1440]
+  # Exit horizons: end-of-day, +3 trading days, +5 trading days.
+  horizons: ["eod", "3d", "5d"]
+  directions: ["long", "short"]     # both, so no directional bias is baked in
+  entry_grace_min: 20               # open if within this window past the target time
+  lookback_days: 3                  # how far back to look for just-released events
+  spread_bps: 5                     # informational spread/slippage estimate (not modelled)
 
 # --- Alerts (M8) — NOTIFY only, never execute ------------------------
 # Telegram token/chat live in the worker .env (server-side). Email is a
@@ -427,6 +496,9 @@ decision_board:
   # "Cosa ha mosso questo": how many days back to look for catalysts (news + just
   # -passed calendar events) that explain the RECENT move (never the next one).
   attribution_lookback_days: 5
+  # Ciclicità (stagionalità): history pulled per instrument for month/weekday
+  # seasonality. Several years needed; honest by construction (n + soglia + caveat).
+  seasonality_history_days: 2600
   base_rate:
     horizons: [1, 3, 5]        # trading days ahead for the historical distribution
     min_sample: 20             # below this n -> "campione insufficiente" (no conclusion)
@@ -593,6 +665,118 @@ decision_board:
       fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
 
     # =================================================================
+    # BOOK HOLDINGS — stesso template single-stock (proxy = titolo, COT off,
+    # earnings dominante, fondamentali in evidenza, macro solo sfondo).
+    # Servono SIA come holdings (contano i fondamentali) SIA come trade ≤3
+    # settimane (comanda l'evento-utili + la notizia): vedi "doppia lente".
+    # =================================================================
+    - symbol: "MSFT"
+      name: "Microsoft"
+      options_proxy: "MSFT"
+      themes: ["ai_datacenter"]
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }   # mega-cap, volatilità contenuta
+      range_window: 60
+      round_step: 10
+      figures: ["Satya Nadella"]
+      event_keywords: ["MSFT", "Microsoft", "Azure", "Nadella", "OpenAI", "Copilot", "AI", "cloud", "capex", "earnings", "utili", "FOMC", "CPI"]
+      earnings: true
+      fundamentals: true
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto di sfondo per i growth/duration (peso basso). Il vero driver è la tesi AI/Azure + capex, via news." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "AVGO"
+      name: "Broadcom"
+      options_proxy: "AVGO"
+      themes: ["ai_datacenter", "semis"]
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 72, oversold: 28 }   # earnings molto binari
+      range_window: 60
+      round_step: 25
+      figures: ["Hock Tan"]
+      event_keywords: ["AVGO", "Broadcom", "Tan", "AI", "networking", "semiconductor", "chip", "custom silicon", "VMware", "earnings", "utili", "FOMC", "CPI"]
+      earnings: true
+      fundamentals: true
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Sfondo growth/duration (peso basso). Il vero driver è la tesi AI networking + earnings binari, via news." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "VRT"
+      name: "Vertiv"
+      options_proxy: "VRT"
+      themes: ["ai_datacenter"]
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 75, oversold: 25 }   # PURO AI capex -> alta volatilità
+      range_window: 60
+      round_step: 5
+      figures: []                                          # narrativa via news (capex hyperscaler), nessun CEO tracciato
+      event_keywords: ["VRT", "Vertiv", "data center", "cooling", "power", "capex", "hyperscaler", "AI", "earnings", "utili", "FOMC", "CPI"]
+      earnings: true
+      fundamentals: true
+      board_note: "Driver = capex data-center degli hyperscaler (tesi AI): puro proxy dell'infrastruttura AI, molto volatile. La macro conta poco, conta la spesa in conto capitale annunciata dai grandi cloud (via news/earnings)."
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Sfondo (peso basso). Il vero driver è il capex data-center degli hyperscaler, via news." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-on/off di mercato (contesto, peso basso)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "NVO"
+      name: "Novo Nordisk ADR"
+      options_proxy: "NVO"
+      themes: ["pharma"]
+      # Pesi: driver idiosincratici (FDA/GLP-1/concorrenza) -> fondamentali+news
+      # primari, macro quasi nulla.
+      sections: { macro: 0, technical: 1, news: 3, cyclicality: 1, fundamentals: 3 }
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 72, oversold: 28 }
+      range_window: 60
+      round_step: 5
+      figures: []                                          # driver = FDA/GLP-1/concorrenza, via news
+      event_keywords: ["NVO", "Novo Nordisk", "Wegovy", "Ozempic", "GLP-1", "FDA", "trial", "obesity", "Eli Lilly", "Lilly", "guidance", "earnings", "utili"]
+      earnings: true
+      fundamentals: true
+      board_note: "Driver IDIOSINCRATICI: trial clinici, approvazioni/FDA, concorrenza (Eli Lilly), guidance. La macro USA conta poco (ADR europeo su tema farma). I driver macro qui sono quasi solo rumore di sfondo — pesa la pipeline e la notizia."
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.15, interpretation: "Quasi irrilevante per NVO: driver idiosincratici (FDA/GLP-1/concorrenza). Sfondo minimo." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.15, interpretation: "Risk-on/off di mercato (contesto minimo)." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    - symbol: "SPGI"
+      name: "S&P Global"
+      options_proxy: "SPGI"
+      themes: ["financials"]
+      implied_horizons_days: [1, 3, 30]
+      rsi: { period: 14, overbought: 70, oversold: 30 }   # difensivo, meno volatile
+      range_window: 60
+      round_step: 10
+      figures: []                                          # driver = mercati dei capitali/emissioni, via news
+      event_keywords: ["SPGI", "S&P Global", "ratings", "credit", "issuance", "index", "guidance", "earnings", "utili", "FOMC", "CPI"]
+      earnings: true
+      fundamentals: true
+      board_note: "Difensivo/finanziario (rating, indici): meno volatile. Driver = mercati dei capitali e volumi di emissione del debito (più emissioni = più ricavi da rating), oltre a earnings + guidance."
+      macro_drivers:
+        - { id: "DFII10", label: "Tasso reale 10y", source: fred,  supportive_when: falling, weight: 0.3, interpretation: "Contesto tassi: influisce sui volumi di emissione del debito (driver dei ricavi da rating). Sfondo." }
+        - { id: "^VIX",   label: "VIX",             source: price, supportive_when: falling, weight: 0.3, interpretation: "Risk-off riduce le emissioni (meno ricavi da rating). Contesto, peso basso." }
+      synthesis:
+        weights: { trend_ma: 1.0, rsi: 0.0, skew: 0.5 }
+      fx_signals: true
+      fx: { rr_horizons_days: [1, 7, 30], history_days: 3650, event_follow_days: 1, event_min_sample: 8 }
+
+    # =================================================================
     # MACRO INSTRUMENT — RAME (commodity). COT UTILE (managed money,
     # report disaggregated). Opzioni CPER SOTTILI -> skew/implicite a
     # bassa affidabilità (il motore lo marca da solo). Driver reale =
@@ -601,6 +785,10 @@ decision_board:
     - symbol: "HG=F"
       name: "Rame"
       options_proxy: "CPER"          # opzioni sottili -> implicite/skew a bassa affidabilità
+      # Pesi: il driver reale è la DOMANDA CINESE/industriale (PMI Cina) via news;
+      # macro e COT contano, i "fondamentali" specifici = PMI Cina (non aziendali).
+      sections: { macro: 2, technical: 2, news: 3, cyclicality: 2, fundamentals: 1 }
+      fundamentals_note: "Per il rame i «fondamentali» sono la domanda fisica: PMI manifatturiero cinese, scorte LME, attività industriale — non un bilancio aziendale. Arrivano da news/dati macro, non da yfinance."
       implied_horizons_days: [1, 3, 30]
       rsi: { period: 14, overbought: 70, oversold: 30 }
       range_window: 60
