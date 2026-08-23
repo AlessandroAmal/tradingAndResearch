@@ -604,6 +604,17 @@ ul.tight li { margin: 2px 0; }
 .ruin-val { font-size: var(--fs-sm); text-align: right; font-variant-numeric: tabular-nums; }
 .kelly-inline { margin: 4px 0 0; }
 
+/* collapsible secondary content inside a section (Prospettive under Asset,
+   Options/Sizing under Decidi) — keeps the primary view uncluttered */
+.section-fold { margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); padding: 0 14px; }
+.section-fold > summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: var(--text);
+  list-style: none; display: flex; align-items: center; gap: 8px; }
+.section-fold > summary::before { content: '▸'; color: var(--muted); }
+.section-fold[open] > summary::before { content: '▾'; }
+.section-fold > summary::-webkit-details-marker { display: none; }
+.section-fold[open] { padding-bottom: 14px; }
+
 /* prospects fan chart — 95% (light) + 68% (dark) band + median line */
 .fan-chart { width: 100%; height: auto; margin: 4px 0 12px; }
 .fan-95 { fill: var(--accent, var(--pos)); opacity: 0.12; }

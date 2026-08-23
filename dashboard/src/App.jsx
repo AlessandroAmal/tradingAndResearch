@@ -50,15 +50,16 @@ export default function App() {
   const [errors, setErrors] = useState({})
   const [nowMs, setNowMs] = useState(Date.now())
   const [refreshKey, setRefreshKey] = useState(0) // bumped each load -> self-fetching panels re-read
-  // Information architecture: primary groups + a trading sub-tab (state only).
-  const [primary, setPrimary] = useState('mercati')     // 'mercati' | 'trading' | 'guida'
-  const [tradingTab, setTradingTab] = useState('risk')  // 'risk' | 'journal' | 'options'
+  // Information architecture (AUDIT §6): 5 sections + Guida, each answering ONE
+  // question. Multi-view sections carry a light in-section sub-nav (state only).
+  const [primary, setPrimary] = useState('mercati')     // mercati|asset|decidi|portafoglio|ricerca|guida
+  const [portTab, setPortTab] = useState('posizioni')   // posizioni | andamento | alert
+  const [ricercaTab, setRicercaTab] = useState('backtest') // backtest | calibrazione | esperimento
   const [decisionSymbol, setDecisionSymbol] = useState(null) // opened from the overview
 
   const openDecision = (sym) => {
     setDecisionSymbol(sym)
-    setPrimary('trading')
-    setTradingTab('decision')
+    setPrimary('asset')
   }
 
   // tick for live countdowns (state only — no browser storage)
@@ -171,15 +172,19 @@ export default function App() {
     </button>
   )
 
-  const tradingTabBtn = (key, label) => (
+  // Generic in-section sub-nav pill (used by Portafoglio and Ricerca).
+  const subBtn = (cur, setter) => (key, label) => (
     <button
-      className={`nav-btn ${tradingTab === key ? 'active' : ''}`}
-      onClick={() => setTradingTab(key)}
-      aria-current={tradingTab === key ? 'page' : undefined}
+      key={key}
+      className={`nav-btn ${cur === key ? 'active' : ''}`}
+      onClick={() => setter(key)}
+      aria-current={cur === key ? 'page' : undefined}
     >
       {label}
     </button>
   )
+  const portBtn = subBtn(portTab, setPortTab)
+  const ricercaBtn = subBtn(ricercaTab, setRicercaTab)
 
   return (
     <div className="app">
@@ -193,7 +198,10 @@ export default function App() {
         <div className="topbar-actions">
           <nav className="nav" aria-label="Sezioni">
             {navItem('mercati', 'Mercati')}
-            {navItem('trading', 'Trading')}
+            {navItem('asset', 'Asset')}
+            {navItem('decidi', 'Decidi')}
+            {navItem('portafoglio', 'Portafoglio')}
+            {navItem('ricerca', 'Ricerca')}
             {navItem('guida', 'Guida')}
           </nav>
           {primary !== 'guida' && (
@@ -259,36 +267,81 @@ export default function App() {
         </main>
       )}
 
-      {primary === 'trading' && (
+      {primary === 'asset' && (
         <>
-          <nav className="nav subnav" aria-label="Sezione trading">
-            {tradingTabBtn('risk', 'Posizioni & Rischio')}
-            {tradingTabBtn('decision', 'Decision board')}
-            {tradingTabBtn('bench', 'Decisione')}
-            {tradingTabBtn('prospects', 'Prospettive')}
-            {tradingTabBtn('expectancy', 'Expectancy')}
-            {tradingTabBtn('backtest', 'Ricerca')}
-            {tradingTabBtn('experiment', 'Esperimento eventi')}
-            {tradingTabBtn('journal', 'Journal')}
-            {tradingTabBtn('options', 'Options')}
-            {tradingTabBtn('alerts', 'Alert')}
+          <TabHeader title="Asset — com'è messo questo asset e dove può andare?"
+            purpose="Le CONDIZIONI ORA (lancetta, driver macro con freschezza, «cosa ha mosso», tecnica, news, fondamentali) e, sotto, le PROSPETTIVE future (distribuzione multi-orizzonte). Non è una previsione."
+            howto={[
+              'La lancetta è l’allineamento delle CONDIZIONI attuali, non una probabilità né una previsione.',
+              'Il numero calibrato è la probabilità IMPLICITA (opzioni); lo storico è frequenza con n.',
+              'Le Prospettive in fondo sono distribuzioni di esiti (opzioni risk-neutral + storico con n effettivo).',
+            ]}
+            onGuide={() => setPrimary('guida')} />
+          <DecisionBoard
+            initialSymbol={decisionSymbol}
+            instruments={instruments}
+            settings={riskSettings}
+            positions={realPositions}
+            closedPositions={recentClosed}
+            events={events}
+            priceBySymbol={priceBySymbol}
+            multiplierBySymbol={multiplierBySymbol}
+            onSaved={loadAll}
+          />
+          <details className="section-fold">
+            <summary>Prospettive — dove può andare (distribuzione multi-orizzonte 1s/1m/3m/6m/1a)</summary>
+            <p className="muted small">Ultimo risultato salvato col timestamp; il ricalcolo richiede minuti. Distribuzioni di esiti, non previsioni puntuali.</p>
+            <Prospects nowMs={nowMs} initialSymbol={decisionSymbol} />
+          </details>
+        </>
+      )}
+
+      {primary === 'decidi' && (
+        <>
+          <TabHeader title="Decidi — questa scommessa ha senso, e con che struttura entro?"
+            purpose="L’aritmetica di UNA scommessa: win-rate di pareggio (costi inclusi) vs odds impliciti, scenari in €, confronto diretta vs opzione. Precompilato: cambia 1-2 campi."
+            howto={[
+              'I campi sono precompilati (prezzo, stop ~k×ATR, target da R/R, rischio% da config): cambia solo ciò che vuoi.',
+              'Il margine è la TUA tesi: gli odds impliciti sono già il mercato.',
+              '“Monitora come test” salva la scommessa come paper con lo snapshot.',
+            ]}
+            onGuide={() => setPrimary('guida')} />
+          <DecisionBench
+            instruments={instruments} settings={riskSettings}
+            positions={realPositions} closedPositions={recentClosed}
+            priceBySymbol={priceBySymbol} multiplierBySymbol={multiplierBySymbol}
+            events={events} initialSymbol={decisionSymbol} onSaved={loadAll} />
+          <details className="section-fold">
+            <summary>Options — struttura a rischio definito (catene reali, POP, Greeks)</summary>
+            <OptionsDesk />
+          </details>
+          <details className="section-fold">
+            <summary>Sizing calculator (standalone)</summary>
+            <SizingCalculator instruments={instruments} settings={riskSettings} priceBySymbol={priceBySymbol} />
+          </details>
+        </>
+      )}
+
+      {primary === 'portafoglio' && (
+        <>
+          <TabHeader title="Portafoglio — cosa ho e come sto andando davvero?"
+            purpose="Le tue posizioni (reali e di test), heat e concentrazione; e la review unificata: expectancy (quantitativa) + pattern del journal (qualitativa)."
+            howto={[
+              'Le posizioni di test (paper) non contano nel rischio/heat reale.',
+              'La review unisce i numeri (win rate, R, Kelly) e i pattern del journal: stessi trade, due letture.',
+              'Gli alert sono edge-triggered con cooldown (niente spam).',
+            ]}
+            onGuide={() => setPrimary('guida')} />
+          <nav className="nav subnav" aria-label="Sezione portafoglio">
+            {portBtn('posizioni', 'Posizioni & rischio')}
+            {portBtn('andamento', 'Andamento & review')}
+            {portBtn('alert', 'Alert')}
           </nav>
 
-          {tradingTab === 'risk' && (
+          {portTab === 'posizioni' && (
             <>
-              <TabHeader
-                title="Posizioni & Rischio"
-                purpose="Dimensiona e monitora il rischio. Calcola la size da entry/stop/rischio%; tieni P&L, heat e deadline sotto i tuoi limiti."
-                howto={[
-                  'Usa la calcolatrice di sizing per ottenere la size dal rischio% scelto.',
-                  '“Nuovo trade — checklist” valida i numeri contro le tue regole (warning, non blocchi).',
-                  '“Monitora come test” apre una posizione IPOTETICA (paper) — nessun ordine — per il track record.',
-                ]}
-                onGuide={() => setPrimary('guida')}
-              />
               <main className="grid grid-trading">
                 <div className="col-left">
-                  <SizingCalculator instruments={instruments} settings={riskSettings} priceBySymbol={priceBySymbol} />
                   <TradeGate
                     instruments={instruments}
                     settings={riskSettings}
@@ -346,128 +399,43 @@ export default function App() {
             </>
           )}
 
-          {tradingTab === 'decision' && (
-            <DecisionBoard
-              initialSymbol={decisionSymbol}
-              instruments={instruments}
-              settings={riskSettings}
-              positions={realPositions}
-              closedPositions={recentClosed}
-              events={events}
-              priceBySymbol={priceBySymbol}
-              multiplierBySymbol={multiplierBySymbol}
-              onSaved={loadAll}
-            />
-          )}
-
-          {tradingTab === 'backtest' && (
+          {portTab === 'andamento' && (
             <>
-              <TabHeader title="Ricerca / Backtest"
-                purpose="Misura se una regola tecnica ha edge — NON genera segnali."
-                howto={[
-                  'Guarda il NETTO out-of-sample vs buy&hold (non l’in-sample).',
-                  'Lo Sharpe deflazionato sconta il data-snooping (best-of-N).',
-                ]}
-                onGuide={() => setPrimary('guida')} />
-              <Backtest />
-              <Calibration />
-            </>
-          )}
-
-          {tradingTab === 'bench' && (
-            <>
-              <TabHeader title="Banco di decisione"
-                purpose="Organizza i numeri attorno a UNA scommessa: odds impliciti sui tuoi livelli, win-rate di pareggio (costi inclusi), strutture a confronto, scenari in euro. Read-only, mai un ordine, mai una probabilità fabbricata."
-                howto={[
-                  'Imposta strumento/direzione/orizzonte/entry/stop/target/rischio%.',
-                  'Il win-rate di pareggio va confrontato con gli odds impliciti: il margine è la TUA tesi.',
-                  '“Monitora come test” salva la scommessa come paper con lo snapshot.',
-                ]}
-                onGuide={() => setPrimary('guida')} />
-              <DecisionBench
-                instruments={instruments} settings={riskSettings}
-                positions={realPositions} closedPositions={recentClosed}
-                priceBySymbol={priceBySymbol} multiplierBySymbol={multiplierBySymbol}
-                events={events} onSaved={loadAll} />
-            </>
-          )}
-
-          {tradingTab === 'prospects' && (
-            <>
-              <TabHeader title="Prospettive multi-orizzonte"
-                purpose="La distribuzione degli esiti a 1s/1m/3m/6m/1a (+5a) da opzioni (risk-neutral), storico condizionato (con n effettivo) e valutazione — con verifica di calibrazione. Distribuzioni, non previsioni puntuali."
-                howto={[
-                  'Le prob. da opzioni sono odds di mercato risk-neutral, non del mondo reale.',
-                  'Lo storico condizionato è frequenza passata con n effettivo (corretto per sovrapposizione).',
-                  'La calibrazione dice se il 68%/95% contiene davvero il 68%/95%.',
-                ]}
-                onGuide={() => setPrimary('guida')} />
-              <Prospects nowMs={nowMs} />
-            </>
-          )}
-
-          {tradingTab === 'expectancy' && (
-            <>
-              <TabHeader title="Expectancy & sopravvivenza"
-                purpose="La matematica di lungo periodo del TUO trading, sui tuoi dati chiusi. Misurata, mai prevista: n e intervalli sempre visibili; sotto soglia = rumore."
-                howto={[
-                  'Filtra per reali/paper/strumento: le paper insegnano ma non provano l’esecuzione reale.',
-                  'Il rischio di rovina dipende dalla size: la size decide se sopravvivi.',
-                  'La size Kelly usa il bound INFERIORE: quanto è dimostrato, non sperato.',
-                ]}
-                onGuide={() => setPrimary('guida')} />
               <Expectancy settings={riskSettings} multiplierBySymbol={multiplierBySymbol} refreshKey={refreshKey} />
-            </>
-          )}
-
-          {tradingTab === 'experiment' && (
-            <>
-              <TabHeader title="Esperimento eventi (paper)"
-                purpose="Esperimento controllato: apre posizioni di TEST ai vari ritardi dopo i dati USA per MISURARE cosa succede. Read-only, mai un ordine, mai un segnale."
-                howto={[
-                  'n sempre visibile; sotto soglia = campione insufficiente, non una probabilità.',
-                  'Confronta i ritardi (subito vs aspettare) e la direzione della sorpresa.',
-                  'Separato dal rischio reale e dalle tue paper manuali.',
-                ]}
-                onGuide={() => setPrimary('guida')} />
-              <ExperimentResults refreshKey={refreshKey} nowMs={nowMs} />
-            </>
-          )}
-
-          {tradingTab === 'journal' && (
-            <>
-              <TabHeader title="Journal"
-                purpose="Registra ogni trade e impara: la review mostra quali tuoi setup funzionano, con n."
-                howto={[
-                  'Le posizioni di test chiuse alimentano la review (esito + P&L).',
-                  'Con poche voci i pattern sono ipotesi, non conclusioni (n sempre visibile).',
-                ]}
-                onGuide={() => setPrimary('guida')} />
               <Journal instruments={instruments} positions={positions} />
             </>
           )}
 
-          {tradingTab === 'options' && (
+          {portTab === 'alert' && (
+            <Alerts instruments={instruments} />
+          )}
+        </>
+      )}
+
+      {primary === 'ricerca' && (
+        <>
+          <TabHeader title="Ricerca — questa mia intuizione ha valore reale? (misuriamola)"
+            purpose="Laboratorio di evidenza (avanzato): backtest, calibrazione degli indicatori, esperimento eventi. Read-only, mai un segnale."
+            howto={[
+              'Guarda il NETTO out-of-sample vs buy&hold; lo Sharpe deflazionato sconta il data-snooping.',
+              'La Calibrazione indicatori RICALIBRA la lancetta di confluenza usata in ASSET (peso ∝ IC solo dei fattori significativi).',
+              'L’esperimento eventi misura cosa succede dopo i dati USA: n sempre visibile, sotto soglia = rumore.',
+            ]}
+            onGuide={() => setPrimary('guida')} />
+          <nav className="nav subnav" aria-label="Sezione ricerca">
+            {ricercaBtn('backtest', 'Backtest')}
+            {ricercaBtn('calibrazione', 'Calibrazione indicatori')}
+            {ricercaBtn('esperimento', 'Esperimento eventi')}
+          </nav>
+          {ricercaTab === 'backtest' && <Backtest />}
+          {ricercaTab === 'calibrazione' && (
             <>
-              <TabHeader title="Options"
-                purpose="Struttura coperture e trade con perdita massima, R/R e POP."
-                howto={[
-                  'POP = probabilità di profitto implicita di QUELLA struttura, non una previsione.',
-                  'POP alta di solito = payoff piccolo: leggila con max loss e R/R.',
-                ]}
-                onGuide={() => setPrimary('guida')} />
-              <OptionsDesk />
+              <p className="muted small">La ricalibrazione qui aggiorna i pesi della lancetta di confluenza usata in <strong>Asset</strong> (peso ∝ IC out-of-sample dei soli fattori significativi).</p>
+              <Calibration />
             </>
           )}
-
-          {tradingTab === 'alerts' && (
-            <>
-              <TabHeader title="Alert"
-                purpose="Notifiche su rischio, eventi, soglie e key-figure."
-                howto={['Le regole standing e le soglie sono edge-triggered con cooldown (niente spam).']}
-                onGuide={() => setPrimary('guida')} />
-              <Alerts instruments={instruments} />
-            </>
+          {ricercaTab === 'esperimento' && (
+            <ExperimentResults refreshKey={refreshKey} nowMs={nowMs} />
           )}
         </>
       )}

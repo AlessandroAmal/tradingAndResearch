@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchDecisionBoards, fetchDecisionBoard, fetchDecisionBoardsFull, insertPosition, insertJournalEntry } from '../api/data'
+import { fetchDecisionBoards, fetchDecisionBoard, insertPosition, insertJournalEntry } from '../api/data'
 import { positionSize } from '../lib/risk'
 import { betMath, verdict, scenarioLadder, optionIllustration, impliedOnLevels } from '../lib/bench'
 import { evaluateGate } from '../lib/gate'
@@ -14,7 +14,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 
 // BANCO DI DECISIONE — organises the numbers around ONE bet. READ-ONLY, never an
 // order, never a fabricated probability: the only odds are option-implied.
-export default function DecisionBench({ instruments, settings, positions, closedPositions, priceBySymbol, multiplierBySymbol, events, onSaved }) {
+export default function DecisionBench({ instruments, settings, positions, closedPositions, priceBySymbol, multiplierBySymbol, events, initialSymbol = null, onSaved }) {
   const [symbols, setSymbols] = useState([])
   const [board, setBoard] = useState(null)
   const [f, setF] = useState({ symbol: '', direction: 'long', horizon: 10, entry: '', stop: '', target: '', riskPct: '' })
@@ -28,18 +28,40 @@ export default function DecisionBench({ instruments, settings, positions, closed
     fetchDecisionBoards().then(({ data }) => {
       const rows = data || []
       setSymbols(rows)
-      setF((s) => ({ ...s, symbol: s.symbol || (rows[0]?.symbol || '') }))
+      const wanted = initialSymbol && rows.some((r) => r.symbol === initialSymbol) ? initialSymbol : null
+      setF((s) => ({ ...s, symbol: s.symbol || wanted || (rows[0]?.symbol || '') }))
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
     if (!f.symbol) return
     fetchDecisionBoard(f.symbol).then(({ data }) => {
       const b = data?.board || null
       setBoard(b)
-      // default entry = current price
-      setF((s) => ({ ...s, entry: s.entry || (b?.last != null ? String(b.last) : '') }))
+      // LOW-FRICTION prefill: entry = current price; stop = k×ATR (long: below,
+      // short: above); target = R/R default × the stop distance; rischio% = config.
+      // The user only has to change 1-2 fields to get a useful read.
+      setF((s) => {
+        const price = b?.last
+        const atr = b?.technicals?.atr
+        const k = Number(settings?.stop_atr_min_multiple ?? 1.5)
+        const rr = Number(settings?.rr_min ?? 1.5)
+        const dir = s.direction
+        const next = { ...s }
+        if (!s.entry && price != null) next.entry = String(price)
+        if (!s.stop && price != null && atr) {
+          const dist = k * atr
+          next.stop = String(Number((dir === 'long' ? price - dist : price + dist).toFixed(4)))
+        }
+        if (!s.target && price != null && atr) {
+          const dist = k * atr * rr
+          next.target = String(Number((dir === 'long' ? price + dist : price - dist).toFixed(4)))
+        }
+        if (!s.riskPct && settings?.max_risk_per_trade_pct != null) next.riskPct = String(settings.max_risk_per_trade_pct)
+        return next
+      })
     })
-  }, [f.symbol])
+  }, [f.symbol, settings])
 
   const multiplier = Number(multiplierBySymbol?.[f.symbol]) || 1
   const accountSize = Number(settings?.account_size) || 0
@@ -264,67 +286,10 @@ export default function DecisionBench({ instruments, settings, positions, closed
         </div>
         <p className="muted small">Precompila la paper con QUESTA scommessa e salva lo snapshot (win-rate di pareggio + odds impliciti) per la review. Niente ordini.</p>
       </section>
-
-      {/* 7) TWIN VIEW — COMPARE INSTRUMENTS */}
-      <CompareInstruments direction={f.direction} horizon={horizon} nowMs={nowMs} />
+      {/* "Confronta strumenti" rimosso (AUDIT §6): la Panoramica in MERCATI è l'unica
+          tabella multi-strumento, stesso scopo. */}
     </div>
   )
-}
-
-function CompareInstruments({ direction, horizon, nowMs }) {
-  const [rows, setRows] = useState([])
-  useEffect(() => { fetchDecisionBoardsFull().then(({ data }) => setRows((data || []).map((r) => summarise(r, direction, horizon, nowMs)))) }, [direction, horizon, nowMs])
-  return (
-    <section className="panel">
-      <header className="panel-head"><h2>7 · Confronta strumenti</h2><span className="muted small">{direction} · {horizon}g · confronta COSTO e STRUTTURA, non chi salirà</span></header>
-      {rows.length === 0 ? <p className="muted small">Nessun board. Premi Aggiorna.</p> : (
-        <div className="risk-table-wrap"><table className="risk-table">
-          <thead><tr><th>Strumento</th><th>Mov. atteso</th><th>Costo</th><th>P(±1 ATR)</th><th>Eventi in finestra</th><th>Divergenza</th></tr></thead>
-          <tbody>{rows.map((r) => (
-            <tr key={r.symbol}>
-              <td>{r.name}</td>
-              <td>{r.expMove == null ? '—' : `±${fmtNum(r.expMove, 1)}%`}</td>
-              <td className="muted">{r.costPct == null ? '—' : `${fmtNum(r.costPct, 2)}%`}</td>
-              <td>{r.probUpAtr == null ? '—' : `${fmtPct(r.probUpAtr * 100).replace('+', '')} / ${fmtPct((1 - r.probUpAtr) * 100).replace('+', '')}`}</td>
-              <td className={r.events > 0 ? 'warn' : 'muted'}>{r.events}</td>
-              <td>{r.divergence == null ? '—' : fmtNum(r.divergence, 2)}</td>
-            </tr>
-          ))}</tbody>
-        </table></div>
-      )}
-      <p className="muted small caveat">P(±1 ATR) = prob. implicita sopra +1 ATR / sotto −1 ATR a scadenza. Confronta la scommessa, non una previsione direzionale.</p>
-    </section>
-  )
-}
-
-function summarise(row, direction, horizon, nowMs) {
-  const b = row.board || {}
-  const hz = (b.implied?.horizons || []).filter((h) => h.available)
-  const rep = hz.length ? hz.reduce((a, c) => (Math.abs((c.days_to_expiry || 0) - horizon) < Math.abs((a.days_to_expiry || 0) - horizon) ? c : a)) : null
-  const spot = b.implied?.spot ?? b.last
-  const atr = b.technicals?.atr
-  const r = b.implied?.risk_free_rate ?? 0.04
-  let probUpAtr = null
-  if (rep?.atm_iv && spot && atr) {
-    const T = Math.max(horizon, 0.5) / 365, iv = rep.atm_iv
-    const d2 = (Math.log(spot / (spot + atr)) + (r - 0.5 * iv * iv) * T) / (iv * Math.sqrt(T))
-    probUpAtr = 0.5 * (1 + erf(d2 / Math.SQRT2))
-  }
-  const end = nowMs + horizon * 86_400_000
-  const events = (b.events || []).filter((e) => { const t = new Date(e.event_time).getTime(); return t >= nowMs && t <= end }).length
-  const div = b.synthesis?.divergence
-  const divScore = (() => {
-    const lean = b.synthesis?.lean?.score, p = rep?.prob_up
-    if (lean == null || p == null) return null
-    return Math.abs(Math.max(-1, Math.min(1, lean / 100)) - (p - 0.5) * 2)
-  })()
-  return { symbol: row.symbol, name: row.name || row.symbol, expMove: rep?.expected_move_pct ?? null,
-    costPct: (b.costs?.spread_bps ?? null) == null ? null : b.costs.spread_bps / 100, probUpAtr, events, divergence: divScore, div }
-}
-function erf(x) {
-  const t = 1 / (1 + 0.3275911 * Math.abs(x))
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)
-  return x >= 0 ? y : -y
 }
 
 const pct = (v) => (v == null ? '—' : fmtPct(v * 100).replace('+', ''))

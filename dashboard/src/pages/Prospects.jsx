@@ -9,7 +9,7 @@ const HLABEL = { '1s': '1 settimana', '1m': '1 mese', '3m': '3 mesi', '6m': '6 m
 // PROSPETTIVE — the distribution of outcomes per horizon, from options (risk-
 // neutral), conditional history (with effective n), and valuation. NOT a point
 // forecast; every number is market odds or a historical frequency with n.
-export default function Prospects({ nowMs = Date.now() }) {
+export default function Prospects({ nowMs = Date.now(), initialSymbol = null }) {
   const [symbols, setSymbols] = useState([])
   const [symbol, setSymbol] = useState('')
   const [snap, setSnap] = useState(null)
@@ -26,7 +26,9 @@ export default function Prospects({ nowMs = Date.now() }) {
     fetchProspectsList().then(({ data }) => {
       const list = data || []
       setSymbols(list)
-      setSymbol((s) => s || PREFERRED.find((p) => list.some((r) => r.symbol === p)) || list[0]?.symbol || '')
+      // honour the asset opened from ASSET/overview, else a data-rich default
+      const wanted = initialSymbol && list.some((r) => r.symbol === initialSymbol) ? initialSymbol : null
+      setSymbol((s) => s || wanted || PREFERRED.find((p) => list.some((r) => r.symbol === p)) || list[0]?.symbol || '')
     })
     fetchProspectCalibration().then(({ data }) => setCal(data || null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
