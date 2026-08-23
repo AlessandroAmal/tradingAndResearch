@@ -47,3 +47,11 @@ export function generateBriefing(kind = 'intraday') {
 export function recalibrate() {
   return post('/calibrate')
 }
+
+// FREE: rebuild multi-horizon prospects; and its retrospective calibration.
+export function refreshProspects() {
+  return post('/prospects/refresh')
+}
+export function calibrateProspects() {
+  return post('/prospects/calibrate')
+}

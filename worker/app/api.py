@@ -190,6 +190,36 @@ def calibrate() -> dict[str, Any]:
         _refresh_lock.release()
 
 
+# --- /prospects (FREE) — multi-horizon distributions + retro calibration ---
+@app.post("/prospects/refresh", dependencies=[Depends(require_token)])
+def prospects_refresh() -> dict[str, Any]:
+    if not _refresh_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Operazione già in corso.")
+    try:
+        cfg, storage = _cfg(), _storage()
+        from .prospects.runner import run_prospects
+        res = run_prospects(cfg, storage,
+                            build_options_provider(cfg.options_provider),
+                            build_price_provider(cfg.providers.get("prices", "yfinance")))
+        return {"ok": res["failed"] == 0, "prospects": res}
+    finally:
+        _refresh_lock.release()
+
+
+@app.post("/prospects/calibrate", dependencies=[Depends(require_token)])
+def prospects_calibrate() -> dict[str, Any]:
+    if not _refresh_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Operazione già in corso.")
+    try:
+        cfg, storage = _cfg(), _storage()
+        from .prospects.calibrate import run_retrospective_calibration
+        res = run_retrospective_calibration(
+            cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")))
+        return {"ok": True, "calibration": res}
+    finally:
+        _refresh_lock.release()
+
+
 # --- /decision/{instrument}/ai (PAID) --------------------------------
 @app.post("/decision/{instrument}/ai", dependencies=[Depends(require_token)])
 def decision_ai(instrument: str, body: AIRequest | None = None) -> dict[str, Any]:

@@ -109,6 +109,33 @@ class SupabaseStorage:
                .order("calibrated_at", desc=True).limit(1).execute())
         return res.data[0] if res.data else None
 
+    # --- multi-horizon prospects (0020) ---------------------------
+    def upsert_prospects(self, symbol: str, snapshot: dict[str, Any]) -> None:
+        self._client.table("prospects").upsert(
+            {"symbol": symbol, "snapshot": snapshot, "updated_at": "now()"},
+            on_conflict="symbol").execute()
+
+    def get_prospects(self, symbol: str) -> dict[str, Any] | None:
+        res = self._client.table("prospects").select("*").eq("symbol", symbol).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def list_prospects(self) -> list[dict[str, Any]]:
+        return self._client.table("prospects").select("symbol, updated_at").execute().data or []
+
+    def insert_prospect_forecast(self, row: dict[str, Any]) -> None:
+        self._client.table("prospect_forecasts").insert(row).execute()
+
+    def insert_prospect_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
+        res = self._client.table("prospect_calibrations").insert(row).execute()
+        return res.data[0] if res.data else {}
+
+    def get_latest_prospect_calibration(self, kind: str | None = None) -> dict[str, Any] | None:
+        q = self._client.table("prospect_calibrations").select("*")
+        if kind:
+            q = q.eq("kind", kind)
+        res = q.order("calibrated_at", desc=True).limit(1).execute()
+        return res.data[0] if res.data else None
+
     # --- risk settings --------------------------------------------
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         row = {**settings, "id": 1, "updated_at": "now()"}

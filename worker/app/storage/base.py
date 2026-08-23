@@ -67,6 +67,27 @@ class Storage(Protocol):
         """The most recent calibration run, or None."""
         ...
 
+    # --- multi-horizon prospects (0020) ---------------------------
+    def upsert_prospects(self, symbol: str, snapshot: dict[str, Any]) -> None:
+        """Store the per-instrument multi-horizon prospects snapshot."""
+        ...
+
+    def get_prospects(self, symbol: str) -> dict[str, Any] | None:
+        ...
+
+    def list_prospects(self) -> list[dict[str, Any]]:
+        ...
+
+    def insert_prospect_forecast(self, row: dict[str, Any]) -> None:
+        """Log one declared distribution to the forward calibration registry."""
+        ...
+
+    def insert_prospect_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    def get_latest_prospect_calibration(self, kind: str | None = None) -> dict[str, Any] | None:
+        ...
+
     # --- risk settings (M6; seeded from config for the dashboard) --
     def upsert_risk_settings(self, settings: dict[str, Any]) -> None:
         """Upsert the singleton risk-settings row (id = 1)."""

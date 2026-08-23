@@ -25,6 +25,7 @@ import ExperimentResults from './pages/ExperimentResults'
 import DecisionBench from './pages/DecisionBench'
 import Expectancy from './pages/Expectancy'
 import Calibration from './pages/Calibration'
+import Prospects from './pages/Prospects'
 import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
@@ -264,6 +265,7 @@ export default function App() {
             {tradingTabBtn('risk', 'Posizioni & Rischio')}
             {tradingTabBtn('decision', 'Decision board')}
             {tradingTabBtn('bench', 'Decisione')}
+            {tradingTabBtn('prospects', 'Prospettive')}
             {tradingTabBtn('expectancy', 'Expectancy')}
             {tradingTabBtn('backtest', 'Ricerca')}
             {tradingTabBtn('experiment', 'Esperimento eventi')}
@@ -387,6 +389,20 @@ export default function App() {
                 positions={realPositions} closedPositions={recentClosed}
                 priceBySymbol={priceBySymbol} multiplierBySymbol={multiplierBySymbol}
                 events={events} onSaved={loadAll} />
+            </>
+          )}
+
+          {tradingTab === 'prospects' && (
+            <>
+              <TabHeader title="Prospettive multi-orizzonte"
+                purpose="La distribuzione degli esiti a 1s/1m/3m/6m/1a (+5a) da opzioni (risk-neutral), storico condizionato (con n effettivo) e valutazione — con verifica di calibrazione. Distribuzioni, non previsioni puntuali."
+                howto={[
+                  'Le prob. da opzioni sono odds di mercato risk-neutral, non del mondo reale.',
+                  'Lo storico condizionato è frequenza passata con n effettivo (corretto per sovrapposizione).',
+                  'La calibrazione dice se il 68%/95% contiene davvero il 68%/95%.',
+                ]}
+                onGuide={() => setPrimary('guida')} />
+              <Prospects nowMs={nowMs} />
             </>
           )}
 

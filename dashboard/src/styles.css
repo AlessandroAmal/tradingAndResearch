@@ -604,6 +604,14 @@ ul.tight li { margin: 2px 0; }
 .ruin-val { font-size: var(--fs-sm); text-align: right; font-variant-numeric: tabular-nums; }
 .kelly-inline { margin: 4px 0 0; }
 
+/* prospects fan chart — 95% (light) + 68% (dark) band + median line */
+.fan-chart { width: 100%; height: auto; margin: 4px 0 12px; }
+.fan-95 { fill: var(--accent, var(--pos)); opacity: 0.12; }
+.fan-68 { fill: var(--accent, var(--pos)); opacity: 0.24; }
+.fan-median { fill: none; stroke: var(--accent, var(--pos)); stroke-width: 2; }
+.fan-zero { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.fan-label { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+
 .briefing-actions { display: flex; align-items: center; gap: 8px; }
 
 /* =====================================================================

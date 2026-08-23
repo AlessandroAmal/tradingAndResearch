@@ -393,6 +393,20 @@ options:
 # manual paper positions. Volume note: entries = |instruments| × |delays| ×
 # |horizons| × |directions| per event (defaults -> 3×4×3×2 = 72 paper rows/event);
 # trim the lists or set enabled:false to reduce.
+# --- Multi-horizon prospects (distributions, not forecasts) ----------
+# Options (risk-neutral, BL) up to ~1y + conditional historical (all horizons,
+# effective-n) + valuation (3/5y). Calibration verifies coverage/reliability.
+prospects:
+  enabled: true
+  history_days: 5475            # ~15y for the conditional/valuation layers
+  min_effective: 5              # min EFFECTIVE (overlap-corrected) n to show a distribution
+  calibration_warmup: 500       # bars of history before retrospective coverage starts
+  # Plausibility ceiling on |median return| per horizon: a risk-neutral median is
+  # ≈ the forward (~0), so a larger value flags a unit bug (proxy≠instrument) and
+  # the value is refused rather than shown.
+  sanity_max_median: { "1s": 0.30, "1m": 0.60, "3m": 1.00, "6m": 1.50, "1a": 2.0 }
+
+# --- Event experiment (controlled macro-event study) -----------------
 experiment:
   enabled: true
   # Key US macro releases to track (matched against event titles).

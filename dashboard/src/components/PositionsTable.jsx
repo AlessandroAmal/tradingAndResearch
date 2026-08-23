@@ -51,17 +51,24 @@ export default function PositionsTable({ positions, priceBySymbol, multiplierByS
       <table className="risk-table">
         <thead>
           <tr>
-            <th>Sym</th><th>Side</th><th>P&amp;L</th><th>Risk%</th>
+            <th>Sym</th><th>Side</th><th>Entry</th><th>Prezzo ora</th><th>P&amp;L</th><th>Risk%</th>
             <th>R</th><th>Days</th><th>Flags</th>
           </tr>
         </thead>
         <tbody>
           {evaluated.map(({ p, e }) => {
             const overRisk = e.riskPerTradeBreached
+            const cur = priceBySymbol[p.symbol] ?? null
+            const curPct = cur != null && p.entry ? (cur / p.entry - 1) * 100 * (p.side === 'long' ? 1 : -1) : null
             return (
               <tr key={p.id}>
                 <td className="sym">{p.symbol}</td>
-                <td><span className={`badge ${p.side}`}>{p.side}</span></td>
+                <td><span className={`badge ${p.side}`}>{p.side === 'long' ? 'long ▲' : 'short ▼'}</span></td>
+                <td>{p.entry == null ? '—' : fmtNum(p.entry, 2)}</td>
+                <td className={curPct == null ? 'muted' : curPct >= 0 ? 'pos' : 'neg'}>
+                  {cur == null ? '—' : fmtNum(cur, 2)}
+                  {curPct != null && <span className="muted small"> ({fmtPct(curPct)})</span>}
+                </td>
                 <td className={e.pnl == null ? 'muted' : e.pnl >= 0 ? 'pos' : 'neg'}>
                   {e.pnl == null ? '—' : fmtNum(e.pnl, 0)}
                 </td>

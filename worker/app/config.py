@@ -144,6 +144,10 @@ class AppConfig:
         return dict(self.raw.get("experiment", {}) or {})
 
     @property
+    def prospects(self) -> dict[str, Any]:
+        return dict(self.raw.get("prospects", {}) or {})
+
+    @property
     def set_aside_per_day(self) -> float:
         return float(self.risk.get("set_aside_per_day", 100.0))
 

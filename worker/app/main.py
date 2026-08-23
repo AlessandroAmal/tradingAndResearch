@@ -178,6 +178,25 @@ def _cmd_calibrate(cfg, storage) -> int:
     return 0
 
 
+def _cmd_prospects(cfg, storage) -> int:
+    """Build the multi-horizon prospects grid per instrument (options+conditional)."""
+    from .prospects.runner import run_prospects
+    pp = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    op = build_options_provider(cfg.options_provider)
+    res = run_prospects(cfg, storage, op, pp)
+    log.info("Prospects: %s", res)
+    return 0 if res["failed"] == 0 else 1
+
+
+def _cmd_calibrate_prospects(cfg, storage) -> int:
+    """Retrospective calibration of the prospects (coverage/reliability, no look-ahead)."""
+    from .prospects.calibrate import run_retrospective_calibration
+    pp = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    res = run_retrospective_calibration(cfg, storage, pp)
+    log.info("Prospects calibration: %s", res)
+    return 0
+
+
 def _cmd_backtest(cfg, storage, args) -> int:
     provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
     if args.scan:
@@ -270,6 +289,8 @@ COMMANDS = {
     "decision": _cmd_decision,
     "experiment": _cmd_experiment,
     "calibrate": _cmd_calibrate,
+    "prospects": _cmd_prospects,
+    "calibrate-prospects": _cmd_calibrate_prospects,
     "api": _cmd_api,
     "run": _cmd_run,
 }

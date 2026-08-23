@@ -46,6 +46,21 @@ export async function fetchPositions(status = 'open') {
   return q
 }
 
+// Multi-horizon prospects snapshot (per instrument) + retro calibration.
+export async function fetchProspectsList() {
+  if (!isConfigured) return NOT_CONFIGURED
+  // pull the friendly name out of the jsonb snapshot so the picker isn't just codes
+  return supabase.from('prospects').select('symbol, updated_at, name:snapshot->>name').order('symbol')
+}
+export async function fetchProspects(symbol) {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('prospects').select('*').eq('symbol', symbol).limit(1).maybeSingle()
+}
+export async function fetchProspectCalibration() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('prospect_calibrations').select('*').order('calibrated_at', { ascending: false }).limit(1).maybeSingle()
+}
+
 // Latest indicator-calibration run (results + evidence-based lean weights).
 export async function fetchCalibration() {
   if (!isConfigured) return NOT_CONFIGURED
