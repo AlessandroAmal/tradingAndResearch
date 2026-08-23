@@ -12,7 +12,7 @@ import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH, FULLPIC_HELP_BY_KEY a
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
 // Snapshots are produced by `python -m app.main decision` (worker).
-export default function DecisionBoard({ initialSymbol = null, instruments, settings, positions, closedPositions, events, priceBySymbol, multiplierBySymbol, onSaved }) {
+export default function DecisionBoard({ initialSymbol = null, instruments, settings, positions, closedPositions, events, priceBySymbol, multiplierBySymbol, onSymbolChange, onSaved }) {
   const [symbols, setSymbols] = useState([])
   const [symbol, setSymbol] = useState(initialSymbol || '')
   const [board, setBoard] = useState(null)
@@ -40,6 +40,12 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
   useEffect(() => {
     if (initialSymbol) setSymbol(initialSymbol)
   }, [initialSymbol])
+
+  // Notify the parent (ASSET) so the price chart above stays in sync with the
+  // board's selected symbol.
+  useEffect(() => {
+    if (symbol) onSymbolChange?.(symbol)
+  }, [symbol, onSymbolChange])
 
   const loadBoard = useCallback(() => {
     if (!symbol) return

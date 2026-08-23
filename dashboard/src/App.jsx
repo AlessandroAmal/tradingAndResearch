@@ -56,9 +56,11 @@ export default function App() {
   const [portTab, setPortTab] = useState('posizioni')   // posizioni | andamento | alert
   const [ricercaTab, setRicercaTab] = useState('backtest') // backtest | calibrazione | esperimento
   const [decisionSymbol, setDecisionSymbol] = useState(null) // opened from the overview
+  const [assetSymbol, setAssetSymbol] = useState(null)       // symbol shown in ASSET (drives the chart)
 
   const openDecision = (sym) => {
     setDecisionSymbol(sym)
+    setAssetSymbol(sym)   // show the chart for it immediately
     setPrimary('asset')
   }
 
@@ -139,6 +141,12 @@ export default function App() {
   const selected = useMemo(
     () => instruments.find((i) => i.id === selectedId) || null,
     [instruments, selectedId],
+  )
+  // Instrument shown in ASSET (for the price chart at the top), synced with the
+  // decision board's selected symbol.
+  const assetInstrument = useMemo(
+    () => instruments.find((i) => i.symbol === assetSymbol) || null,
+    [instruments, assetSymbol],
   )
 
   // Maps for the risk views: latest price + contract multiplier by symbol.
@@ -277,6 +285,9 @@ export default function App() {
               'Le Prospettive in fondo sono distribuzioni di esiti (opzioni risk-neutral + storico con n effettivo).',
             ]}
             onGuide={() => setPrimary('guida')} />
+          {/* Price chart on top — this IS the "com'è messo l'asset" view; it must
+              show the candle chart + technicals + news, synced to the board symbol. */}
+          <InstrumentDetail instrument={assetInstrument} />
           <DecisionBoard
             initialSymbol={decisionSymbol}
             instruments={instruments}
@@ -286,6 +297,7 @@ export default function App() {
             events={events}
             priceBySymbol={priceBySymbol}
             multiplierBySymbol={multiplierBySymbol}
+            onSymbolChange={setAssetSymbol}
             onSaved={loadAll}
           />
           <details className="section-fold">
