@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchDecisionBoards, fetchDecisionBoard } from '../api/data'
+import { fetchDecisionBoards, fetchDecisionBoard, fetchProspects } from '../api/data'
 import { generateAi, apiConfigured } from '../api/control'
 import { probAbove } from '../lib/options'
 import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
@@ -7,7 +7,58 @@ import InfoTip from '../components/InfoTip'
 import ConfluenceGauge from '../components/ConfluenceGauge'
 import { ProbBar, PercentileBar, RsiBar } from '../components/Indicators'
 import { MonitorTestForm, conditionsFromBoard } from '../components/PaperMonitor'
+import Prospects from './Prospects'
 import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH, FULLPIC_HELP_BY_KEY as FPH } from '../data/guide'
+
+const HZ_LABEL = { '1s': '1s', '1m': '1m', '3m': '3m', '6m': '6m', '1a': '1a' }
+
+// Collapsible section with an id (for the anchor nav) + default-open by type.
+function Fold({ id, title, sub, open = false, children }) {
+  return (
+    <details id={id} className="asset-fold" open={open}>
+      <summary><span className="fold-title">{title}</span>{sub && <span className="muted small fold-sub">{sub}</span>}</summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  )
+}
+
+// Prospects snapshot -> per-horizon return distribution rows (options preferred,
+// else conditional). RETURNS only (proxy-safe); drawn from the SAVED snapshot.
+function prospectRows(snap) {
+  if (!snap) return []
+  return (snap.horizons || []).filter((h) => h !== '5a').map((h) => {
+    const opt = snap.options?.by_horizon?.[h]
+    const pair = snap.conditional?.by_horizon?.[h]?.pair
+    if (opt?.available && opt.quality?.reliable) {
+      return { h, src: 'opzioni', median: opt.median_ret, p16: opt.p16_ret, p84: opt.p84_ret, p2: opt.p2_5_ret, p97: opt.p97_5_ret }
+    }
+    if (pair?.sufficient) {
+      return { h, src: `storico n${pair.n_effective}`, median: pair.median, p16: pair.p16, p84: pair.p84, p2: pair.p2_5, p97: pair.p97_5 }
+    }
+    return { h, src: null }
+  })
+}
+
+// Compact fan chart (future) — mirrors Prospects' FanChart, sized for the band.
+function BandFan({ rows }) {
+  const data = rows.filter((r) => r.src && r.median != null)
+  if (data.length < 2) return <p className="muted small">Ventaglio non disponibile (catene sottili / storico insufficiente).</p>
+  const W = 300, H = 120, padX = 26, padY = 10
+  const xs = data.map((_, i) => padX + (i * (W - 2 * padX)) / (data.length - 1))
+  const all = data.flatMap((r) => [r.p2, r.p97]).filter((v) => v != null)
+  const lo = Math.min(...all, 0), hi = Math.max(...all, 0)
+  const y = (v) => H - padY - ((v - lo) / (hi - lo || 1)) * (H - 2 * padY)
+  const band = (a, b) => data.map((r, i) => `${xs[i]},${y(r[a])}`).concat(data.map((r, i) => `${xs[data.length - 1 - i]},${y(r[b])}`)).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="fan-chart" role="img" aria-label="ventaglio prospettive">
+      <line x1={padX} y1={y(0)} x2={W - padX} y2={y(0)} className="fan-zero" />
+      <polygon points={band('p2', 'p97')} className="fan-95" />
+      <polygon points={band('p16', 'p84')} className="fan-68" />
+      <polyline points={data.map((r, i) => `${xs[i]},${y(r.median)}`).join(' ')} className="fan-median" />
+      {data.map((r, i) => <text key={r.h} x={xs[i]} y={H - 1} className="fan-label">{HZ_LABEL[r.h] || r.h}</text>)}
+    </svg>
+  )
+}
 
 // Decision board (M9) — per-instrument confluence cockpit (gold first).
 // NOT a signal and NEVER a prediction: it lays out the context the user weighs.
@@ -21,6 +72,7 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
   const [nowMs, setNowMs] = useState(Date.now())
   const [level, setLevel] = useState('')              // user price level (shared)
   const [ai, setAi] = useState({ loading: false, error: null })
+  const [prospects, setProspects] = useState(null)    // saved multi-horizon snapshot (fan chart)
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30_000)
@@ -47,6 +99,13 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
     if (symbol) onSymbolChange?.(symbol)
   }, [symbol, onSymbolChange])
 
+  // Multi-horizon prospects snapshot for the top-band fan chart (SAVED snapshot,
+  // no recalc needed — the recalc lives in the Prospettive fold).
+  useEffect(() => {
+    if (!symbol) { setProspects(null); return }
+    fetchProspects(symbol).then(({ data }) => setProspects(data?.snapshot || null))
+  }, [symbol])
+
   const loadBoard = useCallback(() => {
     if (!symbol) return
     fetchDecisionBoard(symbol).then(({ data, error }) => {
@@ -67,103 +126,174 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
     loadBoard()  // re-read so the saved AI summary shows
   }, [symbol, level, loadBoard])
 
+  const isStock = !!board?.fundamentals
+  const lean = board?.synthesis?.lean
+  const market = board?.synthesis?.market
+  const fanRows = prospectRows(prospects)
+
   return (
-    <div className="desk">
-      <section className="panel">
-        <header className="panel-head">
-          <h2>Decision board</h2>
-          <span className="muted small">il quadro che pesi tu · non è un segnale, non è una previsione</span>
-        </header>
-
-        {error && <p className="error">Decision board non disponibile — {error}</p>}
-        {symbols.length === 0 && !error && (
-          <p className="muted small">
-            Nessuno snapshot. Esegui <code>python -m app.main decision</code> (serve FRED_API_KEY),
-            oppure premi <strong>Aggiorna</strong> in alto (richiede l’API locale).
-          </p>
-        )}
-
+    <div className="desk asset-view">
+      {/* Sticky controls: symbol selector always visible + price + timestamp + test */}
+      <div className="asset-controls">
         {symbols.length > 0 && (
-          <div className="desk-controls">
-            <label>Strumento
-              <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
-                {symbols.map((s) => <option key={s.symbol} value={s.symbol}>{s.name || s.symbol}</option>)}
-              </select>
-            </label>
-            {board?.last != null && <span className="chip">ultimo {fmtNum(board.last, 2)}</span>}
-            {meta?.snapshot_at && (
-              <span className="muted small">
-                calcolato {relativeTime(meta.snapshot_at, nowMs)}
-                {' '}· {new Date(meta.snapshot_at).toLocaleString()}
-              </span>
-            )}
-          </div>
+          <label className="asset-symbol">Strumento
+            <select value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+              {symbols.map((s) => <option key={s.symbol} value={s.symbol}>{s.name || s.symbol}</option>)}
+            </select>
+          </label>
         )}
+        {board?.last != null && <span className="asset-price">{fmtNum(board.last, 2)}</span>}
+        {meta?.snapshot_at && <span className="muted small">calcolato {relativeTime(meta.snapshot_at, nowMs)}</span>}
         {board && instruments && (
           <MonitorTestForm
-            symbol={symbol}
-            instruments={instruments}
-            settings={settings}
-            multiplier={multiplierBySymbol?.[symbol] ?? 1}
-            multiplierBySymbol={multiplierBySymbol}
-            board={board}
-            positions={positions}
-            closedPositions={closedPositions}
-            events={events}
-            priceBySymbol={priceBySymbol}
-            conditions={conditionsFromBoard(board)}
-            onSaved={onSaved}
-          />
+            symbol={symbol} instruments={instruments} settings={settings}
+            multiplier={multiplierBySymbol?.[symbol] ?? 1} multiplierBySymbol={multiplierBySymbol}
+            board={board} positions={positions} closedPositions={closedPositions}
+            events={events} priceBySymbol={priceBySymbol} conditions={conditionsFromBoard(board)}
+            onSaved={onSaved} />
         )}
-      </section>
+      </div>
 
-      {/* Structural event context — shown for ALL instruments, above the board.
-          Events go WHERE THEY ARE REAL, never fused into the confluence lean. */}
+      {error && <p className="error">Decision board non disponibile — {error}</p>}
+      {symbols.length === 0 && !error && (
+        <p className="muted small">Nessuno snapshot. Premi <strong>Aggiorna</strong> in alto (richiede l’API locale).</p>
+      )}
+
       {board && <EventRiskBanner er={board.event_risk} nowMs={nowMs} />}
-      {board && <MacroFreshnessBanner mf={board.macro_freshness} />}
-      {board && <AttributionBlock a={board.attribution} nowMs={nowMs} />}
-      {board && <DollarNote note={board.dollar_note} />}
-      {board && <SectionGuide emphasis={board.section_emphasis} />}
 
-      {board && board.fundamentals && (
-        // SINGLE STOCK: company first (fundamentals/earnings/news), macro demoted.
+      {board && (
         <>
-          <DualLens lenses={board.lenses} boardNote={board.board_note} />
-          <FullPicturePanel fp={board.full_picture} />
-          <FundamentalsPanel f={board.fundamentals} />
-          <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
-          <StockNewsPanel news={board.news} nowMs={nowMs} />
-          <AnalystsPanel a={board.fundamentals.analysts} last={board.last} />
-          <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
-          <BaseRatePanel br={board.base_rate} />
-          {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
-          <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
-          <details className="panel macro-demote">
-            <summary>Tecnica & lettura macro (contesto secondario)</summary>
-            <p className="muted small">Per un titolo singolo i driver macro sono sfondo: conta soprattutto l’azienda e la notizia.</p>
-            <SynthesisSection synthesis={board.synthesis} implied={board.implied} singleStock />
+          {/* ================= TOP BAND: conditions | odds | distribution ========= */}
+          <section className="asset-band">
+            <div className="band-cell band-lancetta">
+              <div className="band-label">Condizioni ORA <InfoTip text={DH.lean.text} label={DH.lean.label} /></div>
+              <ConfluenceGauge score={lean?.score} label={lean?.label} direction={lean?.direction} />
+              {lean?.top_drivers?.length > 0 && (
+                <p className="muted small band-drivers">guidata da: {lean.top_drivers.map((d, i) => (
+                  <span key={d.key}>{i > 0 ? ', ' : ''}<span className={signClass(d.contribution)}>{d.label}</span></span>
+                ))}</p>
+              )}
+              <p className="band-caveat">Lettura di <strong>CONDIZIONI</strong> attuali (scomposizione di fattori, potere predittivo debole). NON una previsione.</p>
+            </div>
+
+            <div className="band-cell band-odds">
+              <div className="band-label">Odds del mercato <InfoTip text={DH.implied_prob.text} label={DH.implied_prob.label} /></div>
+              <ProbBar value={market?.prob_up} caption={`Prob. salita${market?.horizon ? ` · ~${market.horizon}g` : ''}`} />
+              <label className="band-level">Livello scelto
+                <input type="number" step="any" value={level} onChange={(e) => setLevel(e.target.value)}
+                  placeholder={board.last != null ? fmtNum(board.last, 0) : 'prezzo'} />
+              </label>
+              <p className="band-caveat">Probabilità <strong>IMPLICITA</strong> nelle opzioni (risk-neutral): il numero calibrato, gli odds del mercato. Dettaglio per orizzonte sotto.</p>
+            </div>
+
+            <div className="band-cell band-fan">
+              <div className="band-label">Prospettive — dove può andare <InfoTip text="Distribuzione degli esiti per orizzonte (opzioni risk-neutral + storico con n). Non una previsione puntuale." label="Ventaglio" /></div>
+              <BandFan rows={fanRows} />
+              {fanRows.some((r) => r.src) && (
+                <details className="band-grid-fold">
+                  <summary>griglia orizzonti</summary>
+                  <div className="risk-table-wrap"><table className="risk-table">
+                    <thead><tr><th>Oriz.</th><th>Mediana</th><th>68%</th><th>95%</th><th>Fonte</th></tr></thead>
+                    <tbody>{fanRows.filter((r) => r.src).map((r) => (
+                      <tr key={r.h}>
+                        <td>{HZ_LABEL[r.h] || r.h}</td>
+                        <td className={r.median >= 0 ? 'pos' : 'neg'}>{fmtPct(r.median * 100)}</td>
+                        <td className="muted small">{fmtPct(r.p16 * 100)}…{fmtPct(r.p84 * 100)}</td>
+                        <td className="muted small">{fmtPct(r.p2 * 100)}…{fmtPct(r.p97 * 100)}</td>
+                        <td className="muted small">{r.src}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                </details>
+              )}
+              <p className="band-caveat"><strong>DISTRIBUZIONE</strong> di esiti (opzioni risk-neutral / storico con n), non una previsione puntuale.</p>
+            </div>
+          </section>
+
+          <p className="band-distinction muted small">
+            La <strong>lancetta</strong> misura l’allineamento delle CONDIZIONI di oggi (segnale debole, scomposizione di fattori);
+            il <strong>ventaglio</strong> è una DISTRIBUZIONE di probabilità degli esiti futuri (dalle opzioni e dallo storico, con n).
+            Non sono due versioni della stessa cosa.
+          </p>
+
+          {/* Sticky anchor nav */}
+          <nav className="asset-anchors" aria-label="Sezioni asset">
+            <a href="#mosso">Cosa ha mosso</a>
+            {isStock ? <a href="#fond">Fondamentali</a> : <a href="#macro">Macro</a>}
+            <a href="#storico">Storico</a>
+            {board.fx_signals && <a href="#desk">Desk</a>}
+            <a href="#tecnica">Tecnica</a>
+            {board.seasonality && <a href="#ciclicita">Ciclicità</a>}
+            <a href="#odds">Odds</a>
+            <a href="#prospettive">Prospettive</a>
+            <a href="#ai">AI</a>
+          </nav>
+
+          {/* ================= ORDERED COLLAPSIBLE SECTIONS ====================== */}
+          <Fold id="mosso" title="Cosa ha mosso questo + news" open>
+            <AttributionBlock a={board.attribution} nowMs={nowMs} />
+            {isStock && <StockNewsPanel news={board.news} nowMs={nowMs} />}
+            <DollarNote note={board.dollar_note} />
+          </Fold>
+
+          {isStock ? (
+            <Fold id="fond" title="Fondamentali, utili & sorprese" open>
+              <DualLens lenses={board.lenses} boardNote={board.board_note} />
+              <FullPicturePanel fp={board.full_picture} />
+              <FundamentalsPanel f={board.fundamentals} />
+              <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
+              <AnalystsPanel a={board.fundamentals.analysts} last={board.last} />
+            </Fold>
+          ) : (
+            <Fold id="macro" title="Driver macro + regime + freschezza" open>
+              <MacroFreshnessBanner mf={board.macro_freshness} />
+              <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
+              <FundamentalsNote note={board.fundamentals_note} />
+            </Fold>
+          )}
+
+          {isStock && (
+            <Fold id="macro" title="Driver macro (sfondo)">
+              <MacroFreshnessBanner mf={board.macro_freshness} />
+              <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
+            </Fold>
+          )}
+
+          <Fold id="storico" title="Storico condizionato / base rate (con n)">
+            <BaseRatePanel br={board.base_rate} />
+            <p className="muted small">Lo storico condizionato ai driver (con n effettivo) è nel dettaglio Prospettive qui sotto.</p>
+          </Fold>
+
+          {board.fx_signals && (
+            <Fold id="desk" title="Segnali desk (skew/RR, expected move, COT)">
+              <FxSignals fx={board.fx_signals} nowMs={nowMs} />
+            </Fold>
+          )}
+
+          <Fold id="tecnica" title="Tecnica + lettura di confluenza (dettaglio)">
+            <SynthesisSection synthesis={board.synthesis} implied={board.implied} singleStock={isStock} />
             <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
-            <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
-          </details>
+          </Fold>
+
+          {board.seasonality && (
+            <Fold id="ciclicita" title="Ciclicità (stagionalità)">
+              <SeasonalityPanel s={board.seasonality} />
+            </Fold>
+          )}
+
+          <Fold id="odds" title="Probabilità implicite — dettaglio per orizzonte + livello">
+            <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
+          </Fold>
+
+          <Fold id="prospettive" title="Prospettive — dettaglio (livello, condizionamento, calibrazione)">
+            <Prospects nowMs={nowMs} initialSymbol={symbol} />
+          </Fold>
+
+          <Fold id="ai" title="Analisi AI (qualitativa)">
+            <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
+          </Fold>
         </>
       )}
-
-      {board && !board.fundamentals && (
-        // MACRO instruments (indices / FX / commodity): confluence-first, unchanged.
-        <>
-          <SynthesisSection synthesis={board.synthesis} implied={board.implied} />
-          <ConfluenceBoard rows={board.confluence || []} rsi={board.technicals?.rsi} />
-          <BaseRatePanel br={board.base_rate} />
-          <ImpliedPanel implied={board.implied} level={level} onLevelChange={setLevel} />
-          {board.fx_signals && <FxSignals fx={board.fx_signals} nowMs={nowMs} />}
-          <AISummary s={board.ai_summary} onRun={runAi} ai={ai} level={level} />
-          <FundamentalsNote note={board.fundamentals_note} />
-          <Context drivers={board.macro_drivers} events={board.events} figures={board.figures} nowMs={nowMs} />
-        </>
-      )}
-
-      {/* Section 4 — CICLICITÀ: shown for every instrument, honest by construction. */}
-      {board && <SeasonalityPanel s={board.seasonality} />}
     </div>
   )
 }

@@ -25,7 +25,6 @@ import ExperimentResults from './pages/ExperimentResults'
 import DecisionBench from './pages/DecisionBench'
 import Expectancy from './pages/Expectancy'
 import Calibration from './pages/Calibration'
-import Prospects from './pages/Prospects'
 import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
@@ -300,11 +299,6 @@ export default function App() {
             onSymbolChange={setAssetSymbol}
             onSaved={loadAll}
           />
-          <details className="section-fold">
-            <summary>Prospettive — dove può andare (distribuzione multi-orizzonte 1s/1m/3m/6m/1a)</summary>
-            <p className="muted small">Ultimo risultato salvato col timestamp; il ricalcolo richiede minuti. Distribuzioni di esiti, non previsioni puntuali.</p>
-            <Prospects nowMs={nowMs} initialSymbol={decisionSymbol} />
-          </details>
         </>
       )}
 
