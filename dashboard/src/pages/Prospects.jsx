@@ -33,6 +33,11 @@ export default function Prospects({ nowMs = Date.now(), initialSymbol = null }) 
     fetchProspectCalibration().then(({ data }) => setCal(data || null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Follow the parent (ASSET) symbol: when embedded under the decision board and
+  // the user switches instrument, the prospects must switch too (not stay on gold).
+  useEffect(() => {
+    if (initialSymbol && symbols.some((r) => r.symbol === initialSymbol)) setSymbol(initialSymbol)
+  }, [initialSymbol, symbols])
   const load = useCallback(() => { if (symbol) fetchProspects(symbol).then(({ data }) => setSnap(data?.snapshot || null)) }, [symbol])
   useEffect(() => { load() }, [load])
 

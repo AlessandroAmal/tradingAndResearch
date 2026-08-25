@@ -201,6 +201,10 @@ class AppConfig:
         return os.getenv("EXPERIMENT_CRON", self.schedule.get("experiment_cron", "*/5 * * * *"))
 
     @property
+    def prospects_cron(self) -> str:
+        return os.getenv("PROSPECTS_CRON", self.schedule.get("prospects_cron", "20 0 * * *"))
+
+    @property
     def alert_cooldown_seconds(self) -> int:
         return int((self.alerts or {}).get("cooldown_seconds", 3600))
 

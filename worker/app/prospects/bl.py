@@ -134,7 +134,11 @@ def risk_neutral_density(quotes: Sequence, spot: float, T: float, r: float,
     step = (hi - lo) / (grid_points - 1)
 
     def call(k: float) -> float:
-        return opt.bs_price("call", spot, k, T, r, max(smile(k), 1e-6))
+        # Clamp the strike to a positive floor: the finite difference evaluates
+        # call(lo - step) at the lower edge, which can be <= 0 and blow up
+        # math.log(S/K) (real bug: GOOGL "math domain error"). Density there is ~0.
+        kk = max(k, spot * 1e-6)
+        return opt.bs_price("call", spot, kk, T, r, max(smile(kk), 1e-6))
 
     strikes = [lo + i * step for i in range(grid_points)]
     disc = math.exp(r * T)

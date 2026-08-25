@@ -202,6 +202,7 @@ schedule:
   macro_cron: "30 22 * * *"             # FRED macro series: once/day (M9)
   decision_cron: "0 0 * * *"            # decision board assembly: after macro/options (M9)
   experiment_cron: "*/5 * * * *"        # event experiment: opens/closes paper at delays (every 5 min)
+  prospects_cron: "20 0 * * *"          # multi-horizon prospects: once/day (distributions move slowly)
 
 # --- Provider selection (swap implementations without code changes) --
 providers:

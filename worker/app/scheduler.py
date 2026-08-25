@@ -218,6 +218,20 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
             id="event_experiment", max_instances=1, coalesce=True,
         )
 
+    # --- multi-horizon prospects (batch, all instruments) — once/day ---
+    if cfg.prospects.get("enabled", False):
+        def _prospects() -> None:
+            try:
+                from .prospects.runner import run_prospects
+                run_prospects(cfg, storage, options_provider, price_provider)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Prospects job crashed: %s", exc)
+
+        sched.add_job(
+            _prospects, CronTrigger.from_crontab(cfg.prospects_cron),
+            id="prospects", max_instances=1, coalesce=True,
+        )
+
     log.info(
         "Scheduler ready — prices:'%s' calendar:'%s' news:'%s' ai:%s decision_board:%s",
         cfg.prices_cron, cfg.calendar_cron, cfg.news_cron,
