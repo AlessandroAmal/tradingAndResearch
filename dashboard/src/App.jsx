@@ -25,6 +25,7 @@ import ExperimentResults from './pages/ExperimentResults'
 import DecisionBench from './pages/DecisionBench'
 import Expectancy from './pages/Expectancy'
 import Calibration from './pages/Calibration'
+import Episodes from './pages/Episodes'
 import TabHeader from './components/TabHeader'
 import Guide from './pages/Guide'
 import Journal from './pages/Journal'
@@ -432,6 +433,7 @@ export default function App() {
             {ricercaBtn('backtest', 'Backtest')}
             {ricercaBtn('calibrazione', 'Calibrazione indicatori')}
             {ricercaBtn('esperimento', 'Esperimento eventi')}
+            {ricercaBtn('episodi', 'Episodi')}
           </nav>
           {ricercaTab === 'backtest' && <Backtest />}
           {ricercaTab === 'calibrazione' && (
@@ -443,6 +445,7 @@ export default function App() {
           {ricercaTab === 'esperimento' && (
             <ExperimentResults refreshKey={refreshKey} nowMs={nowMs} />
           )}
+          {ricercaTab === 'episodi' && <Episodes />}
         </>
       )}
     </div>

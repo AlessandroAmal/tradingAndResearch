@@ -632,6 +632,22 @@ ul.tight li { margin: 2px 0; }
 .band-level input { width: 100%; }
 .band-grid-fold > summary { cursor: pointer; font-size: var(--fs-xs); color: var(--accent, var(--pos)); padding: 2px 0; }
 .band-fan .fan-chart { max-height: 130px; }
+/* combined headline: key numbers big, the interval always beside them */
+.cmb-head { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+.cmb-metric { display: flex; flex-direction: column; }
+.cmb-big { font-family: var(--mono); font-size: var(--fs-xl); font-weight: 700; line-height: 1.1; }
+.cmb-band { font-family: var(--mono); font-size: var(--fs-md); font-weight: 700; color: var(--text-dim); }
+.cmb-lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.cmb-hz { display: flex; gap: 4px; margin: 6px 0 2px; }
+.hz-pill { font-size: var(--fs-xs); padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: transparent; color: var(--muted); }
+.hz-pill.active { color: var(--text); border-color: var(--line-strong); background: var(--surface-2); }
+.hz-pill:disabled { opacity: 0.4; }
+/* ⓘ "cosa incorpora" — quiet, expandable, in every main block */
+.incorporates { margin-top: 4px; }
+.incorporates > summary { cursor: pointer; font-size: var(--fs-xs); color: var(--accent, var(--pos)); list-style: none; }
+.incorporates > summary::-webkit-details-marker { display: none; }
+.incorporates .fold-body { padding: 4px 0 0; }
 .band-distinction { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--line-strong);
   background: var(--surface-2); border-radius: var(--r-sm); line-height: 1.45; }
 

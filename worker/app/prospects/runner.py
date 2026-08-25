@@ -127,11 +127,17 @@ def _options_block(cfg, options_provider, inst, today, instrument_spot) -> dict:
     return out
 
 
-def _register_forecasts(storage, symbol, cond_block, options_block, spot, today):
+def _register_forecasts(storage, symbol, cond_block, options_block, spot, today, combined_block=None):
     """Log declared distributions to the forward registry (best-effort)."""
     rows = []
     for label, h in HORIZONS.items():
         target = (today + timedelta(days=int(h * 1.4))).isoformat()   # ~calendar days
+        cmb = (combined_block or {}).get("by_horizon", {}).get(label)
+        if cmb and cmb.get("available"):
+            rows.append({"symbol": symbol, "horizon_days": h, "method": "combined",
+                         "median": cmb.get("median"), "p16": cmb.get("p16"), "p84": cmb.get("p84"),
+                         "p2_5": cmb.get("p2_5"), "p97_5": cmb.get("p97_5"),
+                         "entry_price": spot, "target_date": target})
         pair = (cond_block.get("by_horizon", {}).get(label) or {}).get("pair")
         if pair and pair.get("sufficient"):
             rows.append({"symbol": symbol, "horizon_days": h, "method": "conditional",
@@ -154,6 +160,56 @@ def _register_forecasts(storage, symbol, cond_block, options_block, spot, today)
             break
 
 
+# horizon label -> the calibration horizon (days) whose factor IC drives the tilt.
+# Factor calibration only reaches ~21d, so longer horizons get NO tilt (honest).
+_TILT_HORIZON_DAYS = {"1s": "5", "1m": "21", "3m": "21", "6m": None, "1a": None}
+
+
+def _combined_block(cond_block, options_block, cov_by_h, factor_ic) -> dict:
+    """Per-horizon COMBINED distribution from options + conditional, with weights
+    from the track record and a bounded tilt from significant-IC factors. Adopts
+    the combined only where the (bootstrapped) score beats the best component."""
+    from . import combine as CB
+    out: dict = {"by_horizon": {}}
+    for label, h in HORIZONS.items():
+        opt = options_block.get("by_horizon", {}).get(label)
+        pair = (cond_block.get("by_horizon", {}).get(label) or {}).get("pair")
+        components: dict = {}
+        if opt and opt.get("available") and (opt.get("quality") or {}).get("reliable"):
+            components["options"] = {"median": opt.get("median_ret"), "p16": opt.get("p16_ret"), "p84": opt.get("p84_ret")}
+        if pair and pair.get("sufficient"):
+            components["conditional"] = {"median": pair.get("median"), "p16": pair.get("p16"), "p84": pair.get("p84")}
+        if not components:
+            out["by_horizon"][label] = {"available": False}
+            continue
+        # per-component calibration signal: conditional coverage_95 (retrospective);
+        # options has no historical-chain track record -> no score (equal fallback).
+        cal = {}
+        if "conditional" in components:
+            cal["conditional"] = {"coverage_95": (cov_by_h.get(label) or {}).get("coverage_95")}
+        if "options" in components:
+            cal["options"] = {}
+        weights = CB.component_weights(cal) if len(components) > 1 else {list(components)[0]: 1.0}
+        # tilt from significant-IC factors at (roughly) this horizon
+        tilt = {"shift": 0.0, "factors_used": []}
+        thd = _TILT_HORIZON_DAYS.get(label)
+        if thd and factor_ic:
+            fl = [{"key": k, "ic": (v.get(thd) or {}).get("ic"),
+                   "significant": (v.get(thd) or {}).get("significant"),
+                   "contrary": ((v.get(thd) or {}).get("ic") or 0) < 0 and (v.get(thd) or {}).get("significant")}
+                  for k, v in factor_ic.items() if isinstance(v, dict)]
+            tilt = CB.factor_tilt(fl)
+        combined = CB.combine(components, weights, tilt=tilt["shift"])
+        if combined.get("available"):
+            combined["tilt_factors"] = tilt["factors_used"]
+            combined["components_available"] = list(components)
+            # OOS adoption is bootstrapped from coverage until the forward registry
+            # accumulates; the combined is shown, marked not-yet-validated.
+            combined["adoption"] = CB.adopt_combined(None, None, None)
+        out["by_horizon"][label] = combined
+    return out
+
+
 def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
                   price_provider) -> dict[str, int]:
     db_cfg = dict(cfg.raw.get("decision_board", {}) or {})
@@ -163,6 +219,19 @@ def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
     hist_days = int(pcfg.get("history_days", 5475))
     today = datetime.now(timezone.utc).date()
     from ..backtest.data import load_history
+
+    # Track-record inputs for the combined: latest retrospective coverage (per
+    # symbol×horizon) and the latest indicator calibration (factor IC), if any.
+    try:
+        retro = storage.get_latest_prospect_calibration("retrospective") or {}
+        cov_all = retro.get("results", {}) or {}
+    except Exception:  # noqa: BLE001
+        cov_all = {}
+    try:
+        indi = storage.get_latest_calibration() or {}
+        ic_all = indi.get("results", {}) or {}
+    except Exception:  # noqa: BLE001
+        ic_all = {}
 
     ok = failed = 0
     for inst in instruments:
@@ -191,11 +260,27 @@ def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
                                    "note": "Relazione valutazione→rendimento non disponibile: "
                                            "storico valutazioni non conservato. Placeholder onesto."}
 
+            combined_block = _combined_block(
+                cond_block, options_block, cov_all.get(symbol, {}), ic_all.get(symbol, {}))
+
+            # Multi-year EPISODES (rare patterns, read one-by-one, no % under n<10).
+            from . import episodes as EP
+            episodes_block = {
+                "drawdown": EP.drawdown_episodes(dates, closes, threshold=0.20, forward=252),
+            }
+            # Bull-year run applies to equities/indices (the canonical "Nth year of a
+            # bull market" case). Skip only FX/commodity where it's meaningless.
+            sym_u = (symbol or "").upper()
+            is_fx_comm = "=X" in sym_u or "=F" in sym_u
+            if not is_fx_comm:
+                episodes_block["bull_year"] = EP.bull_year_episodes(dates, closes, nth=3)
+
             snapshot = {
                 "symbol": symbol, "name": inst.get("name", symbol),
                 "as_of": datetime.now(timezone.utc).isoformat(), "spot": spot,
                 "horizons": list(HORIZONS), "conditional": cond_block,
                 "options": options_block, "valuation": valuation_block,
+                "combined": combined_block, "episodes": episodes_block,
                 "labels": {
                     "distribution": CAL,
                     "options": "Le probabilità da opzioni sono risk-neutral (odds di mercato), non del mondo reale.",
@@ -203,7 +288,7 @@ def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
                 },
             }
             storage.upsert_prospects(symbol, snapshot)
-            _register_forecasts(storage, symbol, cond_block, options_block, spot, today)
+            _register_forecasts(storage, symbol, cond_block, options_block, spot, today, combined_block)
             ok += 1
         except Exception as exc:  # noqa: BLE001 — isolate per instrument
             failed += 1

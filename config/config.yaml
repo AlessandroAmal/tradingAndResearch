@@ -548,6 +548,12 @@ decision_board:
         - { id: "T10YIE",   label: "Breakeven inflazione 10y", source: fred,  supportive_when: rising,  weight: 0.5, interpretation: "Inflazione attesa ↑ = supporto storico per l'oro." }
         - { id: "DTWEXBGS", label: "Dollaro (broad)",         source: fred,  supportive_when: falling, weight: 1.0, interpretation: "Dollaro ↑ = vento contrario per l'oro (prezzato in USD)." }
         - { id: "^VIX",     label: "VIX",                     source: price, supportive_when: rising,  weight: 0.4, interpretation: "VIX ↑ = clima risk-off, storicamente favorevole all'oro." }
+        # US debt (slow drivers) — MEASURED, not assumed. weight 0 = context: entra
+        # nella calibrazione come ogni fattore; se ha IC → nel combinato col suo peso,
+        # altrimenti resta contesto (dichiarato nel pannello ⓘ).
+        - { id: "GFDEGDQ188S",        label: "Debito federale/PIL",       source: fred, supportive_when: rising, weight: 0.0, interpretation: "Debito/PIL USA. Driver LENTO: atteso senza valore predittivo a 1-6 mesi; rilevante come tesi di lungo periodo per l'oro." }
+        - { id: "A091RC1Q027SBEA",    label: "Interessi sul debito USA",  source: fred, supportive_when: rising, weight: 0.0, interpretation: "Interessi pagati sul debito federale. Driver LENTO: contesto strutturale, non un segnale a breve." }
+        - { id: "FYFSD",              label: "Deficit federale (annuo)",  source: fred, supportive_when: falling, weight: 0.0, interpretation: "Surplus/deficit federale. Driver LENTO: contesto di lungo periodo, atteso senza valore a 1-6 mesi." }
       # Synthesis weights for NON-macro factors. The lean is the alignment of
       # CURRENT conditions, NOT a probability/forecast. Context factors
       # (streak/atr/event) never feed the lean regardless of weight; rsi is a

@@ -39,6 +39,68 @@ function prospectRows(snap) {
   })
 }
 
+// Combined distribution rows per horizon (from the saved snapshot's `combined`).
+function combinedRows(snap) {
+  if (!snap?.combined?.by_horizon) return []
+  return (snap.horizons || []).filter((h) => h !== '5a').map((h) => {
+    const c = snap.combined.by_horizon[h]
+    if (!c?.available) return { h, src: null }
+    return { h, src: 'combinato', median: c.median, p16: c.p16, p84: c.p84, p2: c.p2_5, p97: c.p97_5,
+      prob_up: c.prob_up, weights: c.weights, components: c.components_available, tilt: c.tilt }
+  })
+}
+
+// ⓘ "Cosa incorpora" — inputs (with source), HOW they enter (measured weight /
+// conditioning / context without weight), and what it does NOT incorporate.
+// Generated from the REAL metadata passed in (weights change -> panel changes).
+function Incorporates({ inputs = [], how, excluded = [] }) {
+  return (
+    <details className="incorporates">
+      <summary>ⓘ cosa incorpora</summary>
+      <div className="fold-body">
+        {how && <p className="muted small">{how}</p>}
+        {inputs.length > 0 && (
+          <ul className="tight">{inputs.map((x, i) => (
+            <li key={i} className="small"><strong>{x.name}</strong>{x.source ? ` (${x.source})` : ''} — <span className="muted">{x.role}</span></li>
+          ))}</ul>
+        )}
+        {excluded.length > 0 && <p className="muted small">Non incorpora: {excluded.join(' · ')}.</p>}
+      </div>
+    </details>
+  )
+}
+
+// The 3 components behind the combined at a horizon, with divergence highlighted.
+function ComponentsDetail({ snap, hz }) {
+  const opt = snap?.options?.by_horizon?.[hz]
+  const pair = snap?.conditional?.by_horizon?.[hz]?.pair
+  const oMed = opt?.available && opt.quality?.reliable ? opt.median_ret : null
+  const sMed = pair?.sufficient ? pair.median : null
+  const diverge = oMed != null && sMed != null && Math.abs(oMed - sMed) > 0.03
+  return (
+    <div className="risk-table-wrap">
+      <table className="risk-table">
+        <thead><tr><th>Componente</th><th>Mediana</th><th>68%</th><th>Stato</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Opzioni (risk-neutral)</td>
+            <td className={oMed == null ? 'muted' : oMed >= 0 ? 'pos' : 'neg'}>{oMed == null ? 'n/d' : fmtPct(oMed * 100)}</td>
+            <td className="muted small">{oMed == null ? '—' : `${fmtPct(opt.p16_ret * 100)}…${fmtPct(opt.p84_ret * 100)}`}</td>
+            <td className="muted small">{oMed == null ? 'catena non affidabile' : 'ok'}</td>
+          </tr>
+          <tr>
+            <td>Storico condizionato</td>
+            <td className={sMed == null ? 'muted' : sMed >= 0 ? 'pos' : 'neg'}>{sMed == null ? 'n/d' : fmtPct(sMed * 100)}</td>
+            <td className="muted small">{sMed == null ? '—' : `${fmtPct(pair.p16 * 100)}…${fmtPct(pair.p84 * 100)}`}</td>
+            <td className="muted small">{sMed == null ? 'campione insufficiente' : `n eff. ${pair.n_effective}`}</td>
+          </tr>
+        </tbody>
+      </table>
+      {diverge && <p className="gate-line gate-warn"><span className="gate-tag">⚠ divergenza</span> il mercato prezza {fmtPct(oMed * 100)}, lo storico dice {fmtPct(sMed * 100)}: leggi entrambe.</p>}
+    </div>
+  )
+}
+
 // Compact fan chart (future) — mirrors Prospects' FanChart, sized for the band.
 function BandFan({ rows }) {
   const data = rows.filter((r) => r.src && r.median != null)
@@ -129,7 +191,19 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
   const isStock = !!board?.fundamentals
   const lean = board?.synthesis?.lean
   const market = board?.synthesis?.market
-  const fanRows = prospectRows(prospects)
+  const cmbRows = combinedRows(prospects)
+  const fanRows = cmbRows.some((r) => r.src) ? cmbRows : prospectRows(prospects)   // combined preferred
+  const [bandHz, setBandHz] = useState('1m')
+  const head = (prospects?.combined?.by_horizon || {})[bandHz]
+  // ⓘ metadata built from REAL data: lean weights, driver freshness, combined weights.
+  const macroInputs = (board?.macro_drivers || []).map((d) => ({
+    name: d.label, source: (d.source === 'price' ? 'prezzo' : 'FRED') + (d.as_of_date ? `, al ${d.as_of_date}` : ''),
+    role: (d.weight > 0 ? `peso ${fmtNum(d.weight, 1)} nel lean` : 'contesto (peso 0)') + (d.stale ? ' · dato ritardato' : ''),
+  }))
+  const cmbInputs = head?.available
+    ? [...(head.weights ? Object.entries(head.weights).map(([k, w]) => ({ name: k === 'options' ? 'Opzioni (risk-neutral)' : 'Storico condizionato', source: k === 'options' ? 'catena opzioni' : 'prezzi + regimi', role: `peso misurato ${fmtNum(w, 2)}` })) : []),
+       ...((head.tilt_factors || []).length ? [{ name: 'Tilt fattori calibrati', source: 'IC significativo', role: `sposta la media: ${head.tilt_factors.join(', ')}` }] : [])]
+    : []
 
   return (
     <div className="desk asset-view">
@@ -174,6 +248,8 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
                 ))}</p>
               )}
               <p className="band-caveat">Lettura di <strong>CONDIZIONI</strong> attuali (scomposizione di fattori, potere predittivo debole). NON una previsione.</p>
+              <Incorporates how="Media pesata dei fattori direzionali (peso di config/calibrazione)." inputs={macroInputs}
+                excluded={['fondamentali', 'news', 'ciclicità', 'fattori di contesto (streak/ATR/evento)']} />
             </div>
 
             <div className="band-cell band-odds">
@@ -184,29 +260,37 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
                   placeholder={board.last != null ? fmtNum(board.last, 0) : 'prezzo'} />
               </label>
               <p className="band-caveat">Probabilità <strong>IMPLICITA</strong> nelle opzioni (risk-neutral): il numero calibrato, gli odds del mercato. Dettaglio per orizzonte sotto.</p>
+              <Incorporates how="Ricavata dai prezzi delle opzioni (Black-Scholes risk-neutral)."
+                inputs={[{ name: 'Catena opzioni ' + (board.implied?.underlying || ''), source: 'yfinance', role: 'IV ATM per orizzonte' }]}
+                excluded={['premio al rischio (risk-neutral ≠ mondo reale)', 'fondamentali', 'macro']} />
             </div>
 
             <div className="band-cell band-fan">
-              <div className="band-label">Prospettive — dove può andare <InfoTip text="Distribuzione degli esiti per orizzonte (opzioni risk-neutral + storico con n). Non una previsione puntuale." label="Ventaglio" /></div>
+              <div className="band-label">Combinato — dove può andare <InfoTip text="Distribuzione COMBINATA (opzioni + storico + tilt fattori calibrati), pesi dal track record. Ogni numero va letto con l'ampiezza accanto." label="Combinato" /></div>
+              {/* COMBINED headline for the selected horizon: P(up) + median + 68% (width beside) */}
+              {head?.available ? (
+                <>
+                  <div className="cmb-head">
+                    <div className="cmb-metric"><span className="cmb-big">{fmtPct((head.prob_up) * 100).replace('+', '')}</span><span className="cmb-lbl">P(sale)</span></div>
+                    <div className="cmb-metric"><span className={`cmb-big ${head.median >= 0 ? 'pos' : 'neg'}`}>{fmtPct(head.median * 100)}</span><span className="cmb-lbl">mediana</span></div>
+                    <div className="cmb-metric"><span className="cmb-band">{fmtPct(head.p16 * 100)}…{fmtPct(head.p84 * 100)}</span><span className="cmb-lbl">68%</span></div>
+                  </div>
+                  <div className="cmb-hz">{['1s', '1m', '3m', '6m', '1a'].map((h) => (
+                    <button key={h} className={`hz-pill ${h === bandHz ? 'active' : ''}`} onClick={() => setBandHz(h)}
+                      disabled={!(prospects?.combined?.by_horizon || {})[h]?.available}>{HZ_LABEL[h] || h}</button>
+                  ))}</div>
+                </>
+              ) : <p className="muted small">Combinato non disponibile per questo orizzonte.</p>}
               <BandFan rows={fanRows} />
-              {fanRows.some((r) => r.src) && (
+              {cmbRows.some((r) => r.src) && (
                 <details className="band-grid-fold">
-                  <summary>griglia orizzonti</summary>
-                  <div className="risk-table-wrap"><table className="risk-table">
-                    <thead><tr><th>Oriz.</th><th>Mediana</th><th>68%</th><th>95%</th><th>Fonte</th></tr></thead>
-                    <tbody>{fanRows.filter((r) => r.src).map((r) => (
-                      <tr key={r.h}>
-                        <td>{HZ_LABEL[r.h] || r.h}</td>
-                        <td className={r.median >= 0 ? 'pos' : 'neg'}>{fmtPct(r.median * 100)}</td>
-                        <td className="muted small">{fmtPct(r.p16 * 100)}…{fmtPct(r.p84 * 100)}</td>
-                        <td className="muted small">{fmtPct(r.p2 * 100)}…{fmtPct(r.p97 * 100)}</td>
-                        <td className="muted small">{r.src}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table></div>
+                  <summary>componenti & divergenze</summary>
+                  <ComponentsDetail snap={prospects} hz={bandHz} />
                 </details>
               )}
-              <p className="band-caveat"><strong>DISTRIBUZIONE</strong> di esiti (opzioni risk-neutral / storico con n), non una previsione puntuale.</p>
+              <p className="band-caveat"><strong>DISTRIBUZIONE</strong> combinata (pesi misurati dal track record), non una previsione puntuale.</p>
+              <Incorporates how={head?.weights ? `Combinato: media pesata delle componenti (pesi dal track record) + tilt dai fattori con IC.` : 'Componente singola (track record insufficiente per validare il combinato OOS).'}
+                inputs={cmbInputs} excluded={['valutazione (orizzonte anni)', 'fattori senza IC significativo']} />
             </div>
           </section>
 
