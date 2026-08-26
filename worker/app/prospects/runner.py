@@ -211,7 +211,7 @@ def _combined_block(cond_block, options_block, cov_by_h, factor_ic) -> dict:
 
 
 def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
-                  price_provider) -> dict[str, int]:
+                  price_provider, *, progress=None) -> dict[str, int]:
     db_cfg = dict(cfg.raw.get("decision_board", {}) or {})
     instruments = list(db_cfg.get("instruments", []) or [])
     pcfg = dict(cfg.raw.get("prospects", {}) or {})
@@ -234,8 +234,11 @@ def run_prospects(cfg: AppConfig, storage: Storage, options_provider,
         ic_all = {}
 
     ok = failed = 0
-    for inst in instruments:
+    total = len(instruments)
+    for idx, inst in enumerate(instruments):
         symbol = inst.get("symbol")
+        if progress:
+            progress(idx, total, symbol)
         try:
             df = load_history(symbol, price_provider, days=hist_days)
             dates = [d.date().isoformat() for d in df.index]

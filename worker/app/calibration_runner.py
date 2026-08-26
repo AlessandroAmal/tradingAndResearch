@@ -58,7 +58,7 @@ def _asof_direction_signal(price_dates, macro_rows, supportive_when):
     return out
 
 
-def run_calibration(cfg: AppConfig, storage: Storage, price_provider) -> dict:
+def run_calibration(cfg: AppConfig, storage: Storage, price_provider, *, progress=None) -> dict:
     db_cfg = dict(cfg.raw.get("decision_board", {}) or {})
     instruments = list(db_cfg.get("instruments", []) or [])
     hist_days = int(db_cfg.get("calibration_history_days", 2600))
@@ -68,8 +68,11 @@ def run_calibration(cfg: AppConfig, storage: Storage, price_provider) -> dict:
     period_start = None
 
     from .backtest.data import load_history
-    for inst in instruments:
+    total = len(instruments)
+    for idx, inst in enumerate(instruments):
         symbol = inst.get("symbol")
+        if progress:
+            progress(idx, total, symbol)
         try:
             df = load_history(symbol, price_provider, days=hist_days)
         except Exception as exc:  # noqa: BLE001

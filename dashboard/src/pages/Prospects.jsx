@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchProspectsList, fetchProspects, fetchProspectCalibration } from '../api/data'
-import { refreshProspects, calibrateProspects, apiConfigured } from '../api/control'
+import { refreshProspects, calibrateProspects, getProspectsStatus, getProspectsCalibrateStatus, apiConfigured } from '../api/control'
+import { useJobStatus, runningLabel, doneLabel } from '../lib/useJobStatus'
 import { fmtNum, fmtPct } from '../lib/format'
 import InfoTip from '../components/InfoTip'
 
@@ -15,9 +16,6 @@ export default function Prospects({ nowMs = Date.now(), initialSymbol = null }) 
   const [snap, setSnap] = useState(null)
   const [cal, setCal] = useState(null)
   const [level, setLevel] = useState('')
-  const [busy, setBusy] = useState(null)
-  const [err, setErr] = useState(null)
-  const [status, setStatus] = useState(null)
 
   // Prefer defaulting to an instrument that actually has rich data (gold), so the
   // first thing shown isn't an empty grid (e.g. DAX has no options chain).
@@ -41,20 +39,16 @@ export default function Prospects({ nowMs = Date.now(), initialSymbol = null }) 
   const load = useCallback(() => { if (symbol) fetchProspects(symbol).then(({ data }) => setSnap(data?.snapshot || null)) }, [symbol])
   useEffect(() => { load() }, [load])
 
-  const run = useCallback(async (which) => {
-    setBusy(which); setErr(null); setStatus(null)
-    const { data, error } = which === 'calibrate' ? await calibrateProspects() : await refreshProspects()
-    setBusy(null)
-    if (error) { setErr(error.message); return }
-    if (which === 'calibrate') {
-      fetchProspectCalibration().then(({ data: c }) => setCal(c || null))
-      setStatus(`Calibrazione aggiornata (${data?.calibration?.instruments ?? '—'} strumenti).`)
-    } else {
-      fetchProspectsList().then(({ data: list }) => setSymbols(list || []))
-      load()
-      setStatus(`Prospettive ricalcolate (${data?.prospects?.ok ?? '—'} strumenti).`)
-    }
+  const onRefreshDone = useCallback(() => {
+    fetchProspectsList().then(({ data: list }) => setSymbols(list || []))
+    load()
   }, [load])
+  const onCalibrateDone = useCallback(() => {
+    fetchProspectCalibration().then(({ data: c }) => setCal(c || null))
+  }, [])
+  const refreshJob = useJobStatus(getProspectsStatus, refreshProspects, onRefreshDone)
+  const calibrateJob = useJobStatus(getProspectsCalibrateStatus, calibrateProspects, onCalibrateDone)
+  const anyRunning = refreshJob.running || calibrateJob.running
 
   const spot = snap?.spot
   const K = level !== '' && !Number.isNaN(Number(level)) ? Number(level) : null
@@ -75,13 +69,18 @@ export default function Prospects({ nowMs = Date.now(), initialSymbol = null }) 
                 {symbols.map((s) => <option key={s.symbol} value={s.symbol}>{s.name ? `${s.name} (${s.symbol})` : s.symbol}</option>)}
               </select></label>
           )}
-          <button className="ghost small" onClick={() => run('refresh')} disabled={busy || !apiConfigured}>{busy === 'refresh' ? 'Calcolo… (qualche min)' : '↻ Ricalcola prospettive'}</button>
-          <button className="ghost small" onClick={() => run('calibrate')} disabled={busy || !apiConfigured}>{busy === 'calibrate' ? 'Calibro…' : '↻ Ricalibra (retrospettiva)'}</button>
+          <button className="ghost small" onClick={refreshJob.start} disabled={anyRunning || !apiConfigured}>{refreshJob.running ? 'Calcolo… (qualche min)' : '↻ Ricalcola prospettive'}</button>
+          <button className="ghost small" onClick={calibrateJob.start} disabled={anyRunning || !apiConfigured}>{calibrateJob.running ? 'Calibro…' : '↻ Ricalibra (retrospettiva)'}</button>
           {snap?.as_of && <span className="muted small">calcolato {new Date(snap.as_of).toLocaleString()} · spot {fmtNum(spot, 2)}</span>}
         </div>
-        {status && <p className="ok small">{status}</p>}
-        {err && <p className="error">Operazione non riuscita — {err}</p>}
-        {symbols.length === 0 && <p className="muted small">Nessuna prospettiva ancora. Premi “Ricalcola prospettive” (usa l’API locale) — richiede qualche minuto.</p>}
+        {refreshJob.running && <p className="ok small">Ricalcolo prospettive {runningLabel(refreshJob.status)} — attendi, non serve ripremere.</p>}
+        {refreshJob.status?.state === 'done' && !refreshJob.running && <p className="ok small">{doneLabel(refreshJob.status, (r) => `Prospettive ricalcolate: ${r?.ok ?? '—'} strumenti`)}</p>}
+        {refreshJob.status?.state === 'error' && <p className="error">Ricalcolo prospettive non riuscito — {refreshJob.status.error}</p>}
+        {calibrateJob.running && <p className="ok small">Calibrazione retrospettiva {runningLabel(calibrateJob.status)} — attendi, non serve ripremere.</p>}
+        {calibrateJob.status?.state === 'done' && !calibrateJob.running && <p className="ok small">{doneLabel(calibrateJob.status, (r) => `Calibrazione aggiornata: ${r?.instruments ?? '—'} strumenti`)}</p>}
+        {calibrateJob.status?.state === 'error' && <p className="error">Calibrazione non riuscita — {calibrateJob.status.error}</p>}
+        {(refreshJob.err || calibrateJob.err) && <p className="error">Operazione non riuscita — {refreshJob.err || calibrateJob.err}</p>}
+        {symbols.length === 0 && !anyRunning && <p className="muted small">Nessuna prospettiva ancora. Premi “Ricalcola prospettive” (usa l’API locale) — richiede qualche minuto.</p>}
         {symbols.length > 0 && !snap && <p className="muted small">Carico {symbol}…</p>}
         <ul className="tight">
           <li className="muted small">Le probabilità da <strong>opzioni</strong> sono risk-neutral (odds di mercato), non del mondo reale.</li>
@@ -228,6 +227,20 @@ function aboveFromReturnBands(pair, levelRet) {
   return 1 - 0.5 * (1 + erf(z / Math.SQRT2))
 }
 
+// Insufficient-sample label: show the actual effective n vs the threshold so it's
+// a number ("n eff. 3 · soglia 5"), not just "campione insufficiente".
+function insuffLabel(dist) {
+  if (!dist) return 'campione insufficiente'
+  const ne = dist.n_effective
+  const y = dist.min_effective
+  if (ne == null) return 'campione insufficiente'
+  return `n eff. ${ne}${y != null ? ` · soglia ${y}` : ''} — insufficiente`
+}
+function firstSingle(single) {
+  const vals = Object.values(single || {})
+  return vals.length ? vals[0] : null
+}
+
 // Conditioning: pair (B) as primary, single drivers (A) alongside, with n.
 function Conditioning({ snap }) {
   const c = snap.conditional
@@ -251,9 +264,9 @@ function Conditioning({ snap }) {
               return (
                 <tr key={h}>
                   <td>{HLABEL[h] || h}</td>
-                  <td className={bMissing ? 'muted small' : ''}>{pair?.sufficient ? `${fmtPct(pair.median * 100)} (n ${pair.n_effective})` : 'campione insufficiente'}
+                  <td className={bMissing ? 'muted small' : ''}>{pair?.sufficient ? `${fmtPct(pair.median * 100)} (n ${pair.n_effective})` : insuffLabel(pair)}
                     {diverge && <span className="warn"> ⚠ diverge da A</span>}</td>
-                  <td className="muted small">{aVals.length ? aVals.map(([d, s]) => `${d}: ${fmtPct(s.median * 100)} (n ${s.n_effective})`).join(' · ') : 'campione insufficiente'}</td>
+                  <td className="muted small">{aVals.length ? aVals.map(([d, s]) => `${d}: ${fmtPct(s.median * 100)} (n ${s.n_effective})`).join(' · ') : insuffLabel(firstSingle(cell.single))}</td>
                 </tr>
               )
             })}

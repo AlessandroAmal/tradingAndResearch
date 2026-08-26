@@ -797,3 +797,13 @@ button.ov-row:hover { background: var(--bg-elevated); border-color: transparent;
 .macro-demote > summary { cursor: pointer; font-weight: 600; color: var(--text-secondary); }
 .macro-demote[open] > summary { margin-bottom: 8px; }
 .macro-demote .panel { box-shadow: none; }
+
+/* --- calibration heatmap: survivors made obvious ---------------------- */
+.linklike { background: none; border: none; padding: 0; color: var(--focus); cursor: pointer; font: inherit; text-decoration: underline; }
+.survivor-row td { background: color-mix(in srgb, var(--pos) 8%, transparent); }
+.survivor-badge {
+  display: inline-block; margin-right: 3px; font-weight: 700; color: var(--pos);
+}
+.risk-table.heatmap td.pos { background: color-mix(in srgb, var(--pos) 16%, transparent); font-weight: 600; }
+.risk-table.heatmap td.neg { background: color-mix(in srgb, var(--neg) 16%, transparent); font-weight: 600; }
+.risk-table.heatmap td { transition: background 0.1s; }

@@ -134,6 +134,15 @@ def test_run_decision_board_assembles_and_saves():
     assert drivers["DTWEXBGS"]["state"] == "tailwind"    # dollar falling = tailwind
     assert drivers["^VIX"]["value"] == 18.0 and drivers["^VIX"]["direction"] == "up"
 
+    # Config macro weights reach the driver dict (not silently defaulted to 1.0):
+    # gold's DFII10=1.0, DTWEXBGS=1.0, T10YIE=0.5, ^VIX=0.4, debt series=0.0.
+    assert drivers["DFII10"]["weight"] == 1.0
+    assert drivers["T10YIE"]["weight"] == 0.5
+    assert drivers["^VIX"]["weight"] == 0.4
+    # Every directional lean factor exposes its weight source (calibrated vs config).
+    syn_factors = {f["key"]: f for f in board["synthesis"]["factors"] if f["kind"] == "directional"}
+    assert syn_factors["macro:DFII10"]["weight_source"] == "config"
+
     # Honest base rate present with its sample size + caveat.
     assert "sample_size" in board["base_rate"]
     assert "rimbalzo" in board["base_rate"]["caveat"].lower()

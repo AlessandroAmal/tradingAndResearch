@@ -86,6 +86,72 @@ def _ai_lock(symbol: str) -> threading.Lock:
         return _ai_locks.setdefault(symbol, threading.Lock())
 
 
+# --- background job manager (long runs: calibrate, prospects) ---------
+# Long jobs run in a daemon thread with a status the UI polls. The running flag
+# is ALWAYS cleared in finally (release guaranteed even on crash), and a stale
+# watchdog (STALE_SECONDS) lets a new run supersede a hung one — so a dead/hung
+# run can never wedge the button forever (the old symptom: 409 "già in corso").
+JOB_STALE_SECONDS = int(os.getenv("API_JOB_STALE_SECONDS", "1800"))   # 30 min
+_jobs: dict[str, dict] = {}
+_jobs_guard = threading.Lock()
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def job_status(name: str) -> dict[str, Any]:
+    j = _jobs.get(name)
+    if not j:
+        return {"job": name, "state": "idle"}
+    out: dict[str, Any] = {"job": name, "state": j["state"], "started_at": j.get("started_iso"),
+                           "progress": j.get("progress"), "total": j.get("total"), "step": j.get("step")}
+    if j["state"] == "running":
+        out["elapsed_sec"] = round(time.monotonic() - j["started_mono"], 1)
+        out["stale"] = out["elapsed_sec"] > JOB_STALE_SECONDS
+    else:
+        out["finished_at"] = j.get("finished_iso")
+        out["duration_sec"] = j.get("duration_sec")
+        if j["state"] == "done":
+            out["result"] = j.get("result")
+        if j["state"] == "error":
+            out["error"] = j.get("error")
+    return out
+
+
+def start_job(name: str, fn) -> dict[str, Any]:
+    """Start `fn(progress)` in a daemon thread unless a fresh run is already going.
+    `fn` receives a progress(done, total, step) callback. Returns the status."""
+    with _jobs_guard:
+        cur = _jobs.get(name)
+        if cur and cur["state"] == "running" and (time.monotonic() - cur["started_mono"]) < JOB_STALE_SECONDS:
+            return {**job_status(name), "started": False}   # a fresh run is already in progress
+        _jobs[name] = {"state": "running", "started_mono": time.monotonic(),
+                       "started_iso": _now_iso(), "progress": 0, "total": None, "step": None}
+
+    def _progress(done: int, total: int | None = None, step: str | None = None) -> None:
+        j = _jobs.get(name)
+        if j and j["state"] == "running":
+            j["progress"], j["total"], j["step"] = done, total, step
+
+    def _run() -> None:
+        t0 = time.monotonic()
+        try:
+            result = fn(_progress)
+            j = _jobs.get(name, {})
+            j.update(state="done", result=result, finished_iso=_now_iso(),
+                     duration_sec=round(time.monotonic() - t0, 1))
+        except Exception as exc:  # noqa: BLE001 — record, never wedge the slot
+            log.exception("Job %s failed: %s", name, exc)
+            j = _jobs.get(name, {})
+            j.update(state="error", error=str(exc), finished_iso=_now_iso(),
+                     duration_sec=round(time.monotonic() - t0, 1))
+
+    threading.Thread(target=_run, name=f"job-{name}", daemon=True).start()
+    return {**job_status(name), "started": True}
+
+
 # --- lazy singletons (built once) ------------------------------------
 _state: dict[str, Any] = {}
 
@@ -173,51 +239,60 @@ def _run_step(steps: dict, name: str, fn) -> None:
         steps[name] = {"status": "error", "error": str(exc)}
 
 
-# --- /calibrate (FREE) — recompute indicator calibration + lean weights ----
+# --- /calibrate (FREE, BACKGROUND) — indicator calibration + lean weights ----
+def _do_calibrate(progress) -> dict[str, Any]:
+    cfg, storage = _cfg(), _storage()
+    from .calibration_runner import run_calibration
+    res = run_calibration(cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")),
+                          progress=progress)
+    if cfg.decision_board_enabled:   # rebuild boards so the gauge picks up new weights
+        run_decision_board(cfg, storage, build_options_provider(cfg.options_provider), ai=None)
+    return res
+
+
 @app.post("/calibrate", dependencies=[Depends(require_token)])
 def calibrate() -> dict[str, Any]:
-    if not _refresh_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="Operazione già in corso.")
-    try:
-        cfg, storage = _cfg(), _storage()
-        from .calibration_runner import run_calibration
-        res = run_calibration(cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")))
-        # rebuild the boards so the gauge picks up the new weights immediately
-        if cfg.decision_board_enabled:
-            run_decision_board(cfg, storage, build_options_provider(cfg.options_provider), ai=None)
-        return {"ok": True, "calibration": res}
-    finally:
-        _refresh_lock.release()
+    return start_job("calibrate", _do_calibrate)
 
 
-# --- /prospects (FREE) — multi-horizon distributions + retro calibration ---
+@app.get("/calibrate/status", dependencies=[Depends(require_token)])
+def calibrate_status() -> dict[str, Any]:
+    return job_status("calibrate")
+
+
+# --- /prospects (FREE, BACKGROUND) — distributions + retro calibration -------
+def _do_prospects(progress) -> dict[str, Any]:
+    cfg, storage = _cfg(), _storage()
+    from .prospects.runner import run_prospects
+    return run_prospects(cfg, storage, build_options_provider(cfg.options_provider),
+                         build_price_provider(cfg.providers.get("prices", "yfinance")), progress=progress)
+
+
 @app.post("/prospects/refresh", dependencies=[Depends(require_token)])
 def prospects_refresh() -> dict[str, Any]:
-    if not _refresh_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="Operazione già in corso.")
-    try:
-        cfg, storage = _cfg(), _storage()
-        from .prospects.runner import run_prospects
-        res = run_prospects(cfg, storage,
-                            build_options_provider(cfg.options_provider),
-                            build_price_provider(cfg.providers.get("prices", "yfinance")))
-        return {"ok": res["failed"] == 0, "prospects": res}
-    finally:
-        _refresh_lock.release()
+    return start_job("prospects", _do_prospects)
+
+
+@app.get("/prospects/status", dependencies=[Depends(require_token)])
+def prospects_status() -> dict[str, Any]:
+    return job_status("prospects")
+
+
+def _do_prospects_calibrate(progress) -> dict[str, Any]:
+    cfg, storage = _cfg(), _storage()
+    from .prospects.calibrate import run_retrospective_calibration
+    return run_retrospective_calibration(
+        cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")), progress=progress)
 
 
 @app.post("/prospects/calibrate", dependencies=[Depends(require_token)])
 def prospects_calibrate() -> dict[str, Any]:
-    if not _refresh_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="Operazione già in corso.")
-    try:
-        cfg, storage = _cfg(), _storage()
-        from .prospects.calibrate import run_retrospective_calibration
-        res = run_retrospective_calibration(
-            cfg, storage, build_price_provider(cfg.providers.get("prices", "yfinance")))
-        return {"ok": True, "calibration": res}
-    finally:
-        _refresh_lock.release()
+    return start_job("prospects_calibrate", _do_prospects_calibrate)
+
+
+@app.get("/prospects/calibrate/status", dependencies=[Depends(require_token)])
+def prospects_calibrate_status() -> dict[str, Any]:
+    return job_status("prospects_calibrate")
 
 
 # --- /decision/{instrument}/ai (PAID) --------------------------------

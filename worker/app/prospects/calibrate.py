@@ -46,7 +46,7 @@ def coverage_records(closes, h, warmup, *, step=None):
     return recs
 
 
-def run_retrospective_calibration(cfg: AppConfig, storage: Storage, price_provider) -> dict:
+def run_retrospective_calibration(cfg: AppConfig, storage: Storage, price_provider, *, progress=None) -> dict:
     db_cfg = dict(cfg.raw.get("decision_board", {}) or {})
     instruments = list(db_cfg.get("instruments", []) or [])
     pcfg = cfg.prospects
@@ -56,8 +56,11 @@ def run_retrospective_calibration(cfg: AppConfig, storage: Storage, price_provid
 
     results: dict = {}
     corrections: dict = {}
-    for inst in instruments:
+    total = len(instruments)
+    for idx, inst in enumerate(instruments):
         symbol = inst.get("symbol")
+        if progress:
+            progress(idx, total, symbol)
         try:
             df = load_history(symbol, price_provider, days=hist_days)
             closes = [float(c) for c in df["close"]]

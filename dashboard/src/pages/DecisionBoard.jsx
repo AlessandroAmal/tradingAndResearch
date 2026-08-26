@@ -11,6 +11,7 @@ import Prospects from './Prospects'
 import { DECISION_HELP_BY_KEY as DH, FX_HELP_BY_KEY as FH, FULLPIC_HELP_BY_KEY as FPH } from '../data/guide'
 
 const HZ_LABEL = { '1s': '1s', '1m': '1m', '3m': '3m', '6m': '6m', '1a': '1a' }
+const FACTOR_LABEL = { rsi: 'RSI', trend_ma: 'Trend vs MA', streak: 'Streak', ma200_dist: 'Distanza MA200' }
 
 // Collapsible section with an id (for the anchor nav) + default-open by type.
 function Fold({ id, title, sub, open = false, children }) {
@@ -92,7 +93,7 @@ function ComponentsDetail({ snap, hz }) {
             <td>Storico condizionato</td>
             <td className={sMed == null ? 'muted' : sMed >= 0 ? 'pos' : 'neg'}>{sMed == null ? 'n/d' : fmtPct(sMed * 100)}</td>
             <td className="muted small">{sMed == null ? '—' : `${fmtPct(pair.p16 * 100)}…${fmtPct(pair.p84 * 100)}`}</td>
-            <td className="muted small">{sMed == null ? 'campione insufficiente' : `n eff. ${pair.n_effective}`}</td>
+            <td className="muted small">{sMed == null ? (pair?.n_effective != null ? `n eff. ${pair.n_effective}${pair.min_effective != null ? ` · soglia ${pair.min_effective}` : ''} — insufficiente` : 'campione insufficiente') : `n eff. ${pair.n_effective}`}</td>
           </tr>
         </tbody>
       </table>
@@ -246,6 +247,9 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
                 <p className="muted small band-drivers">guidata da: {lean.top_drivers.map((d, i) => (
                   <span key={d.key}>{i > 0 ? ', ' : ''}<span className={signClass(d.contribution)}>{d.label}</span></span>
                 ))}</p>
+              )}
+              {lean?.score == null && lean?.no_weight_reason && (
+                <p className="muted small band-drivers">{lean.no_weight_reason}</p>
               )}
               <p className="band-caveat">Lettura di <strong>CONDIZIONI</strong> attuali (scomposizione di fattori, potere predittivo debole). NON una previsione.</p>
               <Incorporates how="Media pesata dei fattori direzionali (peso di config/calibrazione)." inputs={macroInputs}
@@ -600,7 +604,14 @@ function SynthesisSection({ synthesis, implied, singleStock = false }) {
         <span className="muted small">fotografia delle condizioni attuali · non una previsione</span>
       </header>
       {cal && (
-        <p className="muted small">🔬 Lancetta <strong>calibrata dall’evidenza</strong> al {new Date(cal.calibrated_at).toLocaleDateString()} (periodo {cal.period_start}…{cal.period_end}, IC a {cal.weight_horizon}g). {cal.note}</p>
+        <div className="honest-note small">
+          <p>🔬 Lancetta <strong>calibrata dall’evidenza</strong> al {new Date(cal.calibrated_at).toLocaleDateString()} (periodo {cal.period_start}…{cal.period_end}{cal.weight_horizon ? `, IC a ${cal.weight_horizon}g` : ''}). {cal.note}</p>
+          {cal.applied && cal.applied_diff && Object.keys(cal.applied_diff).length > 0 && (
+            <p className="muted small">Pesi calibrati <strong>applicati</strong> (prima → dopo): {Object.entries(cal.applied_diff).map(([k, d], i) => (
+              <span key={k}>{i > 0 ? ' · ' : ''}<strong>{FACTOR_LABEL[k] || k}</strong> {fmtNum(d.from, 2)} → {fmtNum(d.to, 2)}</span>
+            ))}. Gli altri fattori (macro/VIX) usano il <strong>peso di config</strong>.</p>
+          )}
+        </div>
       )}
 
       {singleStock && (
@@ -630,6 +641,9 @@ function SynthesisSection({ synthesis, implied, singleStock = false }) {
                 <span key={d.key}>{i > 0 ? ', ' : ''}<span className={signClass(d.contribution)}>{d.label} ({d.contribution > 0 ? '+' : ''}{fmtNum(d.contribution, 0)})</span></span>
               ))}
             </p>
+          )}
+          {score == null && lean?.no_weight_reason && (
+            <p className="honest-note small" style={{ textAlign: 'center' }}>{lean.no_weight_reason}</p>
           )}
           {lean?.tech_caveat && <p className="muted small" style={{ textAlign: 'center' }}>{lean.tech_caveat}</p>}
         </div>
@@ -665,16 +679,17 @@ function SynthesisSection({ synthesis, implied, singleStock = false }) {
         </summary>
         <div className="risk-table-wrap">
           <table className="risk-table">
-            <thead><tr><th>Fattore</th><th>Stato</th><th>Tipo</th><th>Peso</th><th>Contributo</th><th>Nota</th></tr></thead>
+            <thead><tr><th>Fattore</th><th>Stato</th><th>Tipo</th><th>Peso eff.</th><th>Fonte peso</th><th>Contributo</th><th>Nota</th></tr></thead>
             <tbody>
               {factors.map((f) => (
                 <tr key={f.key} className={f.included ? '' : 'excluded'}>
                   <td>{f.label}</td>
                   <td><span className={`fac ${facClass(f.classification)}`}>{facLabel(f.classification)}</span></td>
                   <td className="muted small">{f.kind === 'context' ? 'contesto' : 'direzionale'}</td>
-                  <td className="muted">{f.included ? fmtNum(f.weight, 1) : '—'}</td>
+                  <td className={f.included && f.weight === 0 ? 'muted' : ''}>{f.included ? fmtNum(f.weight, 2) : '—'}</td>
+                  <td className="muted small">{f.kind === 'context' ? '—' : f.weight_source === 'calibrato' ? '🔬 calibrato' : 'config'}</td>
                   <td className={f.contribution != null ? signClass(f.contribution) : 'muted'}>
-                    {f.contribution != null ? `${f.contribution > 0 ? '+' : ''}${fmtNum(f.contribution, 0)}` : '—'}
+                    {f.contribution != null ? `${f.contribution > 0 ? '+' : ''}${fmtNum(f.contribution, 0)}` : (f.included && f.weight === 0 ? 'peso 0' : '—')}
                   </td>
                   <td className="muted small">{f.detail}</td>
                 </tr>
@@ -682,7 +697,7 @@ function SynthesisSection({ synthesis, implied, singleStock = false }) {
             </tbody>
           </table>
         </div>
-        <p className="muted small">Il «Contributo» è il peso segnato di ciascun fattore sul lean (scala −100..+100). Somma dei contributi = lancetta. I fattori di contesto non contribuiscono.</p>
+        <p className="muted small">«Peso eff.» = peso realmente usato nel calcolo (0 = contesto, non entra). «Fonte» = se il peso viene dalla calibrazione (🔬, solo RSI/Trend) o dalla config. Il «Contributo» è il peso segnato sul lean (−100..+100); la somma dei contributi = lancetta. I fattori di contesto non contribuiscono.</p>
       </details>
 
       {/* d. fixed caveats */}

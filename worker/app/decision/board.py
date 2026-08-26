@@ -26,7 +26,7 @@ from ..providers.options import OptionsProvider
 from ..storage import Storage
 from .. import technicals as tech
 from .implied import _atm_iv, _pick_expiry, implied_probabilities
-from .synthesis import classify_macro_state, confluence_read
+from .synthesis import DEFAULT_WEIGHTS, classify_macro_state, confluence_read
 from . import fx_signals as fxs
 
 log = get_logger("decision.board")
@@ -128,6 +128,7 @@ def _resolve_macro_driver(storage: Storage, drv: dict, days: int, regime: dict) 
         "id": sid,
         "label": drv.get("label", sid),
         "source": source,
+        "weight": float(drv.get("weight", 1.0)),   # config weight into the lean (0 = context)
         "value": latest,
         "prev": prev,
         "change": change,
@@ -561,11 +562,15 @@ def run_decision_board(
             # Evidence-based recomposition: calibrated weights override the config
             # ones for the tested lean factors (non-significant → 0). Explicit,
             # dated; still "conditions, not a probability".
-            syn_weights = dict(inst.get("synthesis", {}).get("weights", {}))
+            config_weights = dict(inst.get("synthesis", {}).get("weights", {}))
+            syn_weights = dict(config_weights)
             sym_cal = cal_weights.get(symbol) or {}
+            applied_diff: dict = {}   # key -> {from(config), to(calibrated)} actually applied
             for k, cw in sym_cal.items():
                 if isinstance(cw, dict) and "weight" in cw:
+                    before = config_weights.get(k, DEFAULT_WEIGHTS.get(k, 0.0))
                     syn_weights[k] = cw["weight"]
+                    applied_diff[k] = {"from": float(before), "to": float(cw["weight"])}
             synthesis = confluence_read(
                 drivers=drivers,
                 technicals=technicals,
@@ -573,6 +578,7 @@ def run_decision_board(
                 next_event=events[0] if events else None,
                 weights=syn_weights,
                 fx=fx,
+                calibrated_keys=set(sym_cal),
             )
             if calibration and sym_cal:
                 synthesis["calibration"] = {
@@ -581,9 +587,13 @@ def run_decision_board(
                     "period_end": calibration.get("period_end"),
                     "weight_horizon": calibration.get("weight_horizon"),
                     "weights": sym_cal,
-                    "note": ("Lancetta calibrata dall'evidenza: pesi ∝ IC out-of-sample dei "
-                             "soli fattori significativi; i contrari sono azzerati (non invertiti); "
-                             "i non significativi restano contesto a peso 0. Resta condizioni, non una previsione."),
+                    "applied": True,                 # calibrated weights are already in the gauge
+                    "applied_diff": applied_diff,     # per factor: config weight -> calibrated weight
+                    "calibrated_factors": sorted(sym_cal.keys()),
+                    "note": ("Lancetta calibrata dall'evidenza SOLO sui fattori tecnici testabili "
+                             "(RSI/Trend): pesi ∝ IC out-of-sample dei significativi; i contrari sono "
+                             "azzerati (non invertiti); i non significativi → 0. Gli altri fattori "
+                             "(macro/VIX) restano a PESO DI CONFIG. Resta condizioni, non una previsione."),
                 }
 
             # Event context (honest, never fused into the lean): what moved the

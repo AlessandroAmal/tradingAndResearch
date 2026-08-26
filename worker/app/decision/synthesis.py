@@ -390,12 +390,16 @@ def confluence_read(
     next_event: Mapping | None,
     weights: Mapping | None = None,
     fx: Mapping | None = None,
+    calibrated_keys: set | None = None,
 ) -> dict:
     """Build the transparent confluence read. Pure: no I/O.
 
     `fx` (optional) adds FX desk factors (skew lean, COT contrarian at extremes,
-    expected-move context) — used by EUR/USD; absent for gold."""
+    expected-move context) — used by EUR/USD; absent for gold.
+    `calibrated_keys` names the factors whose weight came from the latest
+    calibration (vs config) so the UI can label each factor's weight source."""
     w = {**DEFAULT_WEIGHTS, **dict(weights or {})}
+    cal_keys = set(calibrated_keys or ())
 
     factors: list[dict] = []
     for d in drivers or []:
@@ -408,6 +412,12 @@ def confluence_read(
     if fx:
         factors.extend(_fx_factors(fx, w))
 
+    # Label each directional factor's weight source so the UI can show whether the
+    # lancetta is running on calibrated evidence or config defaults, per factor.
+    for f in factors:
+        if f.get("kind") == "directional":
+            f["weight_source"] = "calibrato" if f["key"] in cal_keys else "config"
+
     # Lean: weighted mean of {-1,0,+1} over INCLUDED, weighted, directional,
     # NON-context factors. Context factors never contribute (no fabricated direction).
     contributing = [
@@ -416,6 +426,9 @@ def confluence_read(
         and f["key"] not in _CONTEXT_ONLY and f["weight"] > 0
     ]
     total_w = sum(f["weight"] for f in contributing)
+    # Directional factors that exist at all (any weight) vs those actually weighted.
+    directional_all = [f for f in factors
+                       if f["included"] and f["kind"] == "directional" and f["key"] not in _CONTEXT_ONLY]
     score = None
     if total_w > 0:
         raw = sum(_score_of(f["classification"]) * f["weight"] for f in contributing)
@@ -424,6 +437,16 @@ def confluence_read(
         # scale) so the UI can make it obvious what drives the reading.
         for f in contributing:
             f["contribution"] = round(100.0 * _score_of(f["classification"]) * f["weight"] / total_w, 1)
+
+    # Honest state when nothing carries weight: distinguish "measured but all
+    # zeroed" (contrary/non-significant → 0) from "no data at all".
+    no_weight_reason = None
+    if total_w <= 0:
+        if directional_all:
+            no_weight_reason = ("Nessun fattore direzionale con peso: i fattori misurati sono a peso 0 "
+                                "(contrari azzerati o non significativi). Lettura NEUTRA, non un segnale.")
+        else:
+            no_weight_reason = "Dati insufficienti: nessun fattore direzionale disponibile."
 
     label, direction = _label(score)
     excluded = [f["key"] for f in factors if not f["included"]]
@@ -442,6 +465,8 @@ def confluence_read(
             "label": label,
             "direction": direction,
             "contributing_factors": len(contributing),
+            "total_weight": round(total_w, 3),
+            "no_weight_reason": no_weight_reason,   # set when nothing carries weight
             "top_drivers": top_drivers,
             "disclaimer": LEAN_DISCLAIMER,
             "tech_caveat": LEAN_TECH_CAVEAT,

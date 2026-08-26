@@ -7,6 +7,7 @@ ingestion jobs can record a clear failure (CLAUDE.md standards).
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from supabase import Client, create_client
@@ -15,12 +16,36 @@ from ..logging_setup import get_logger
 
 log = get_logger("storage.supabase")
 
+# PostgREST reports an unknown column as PGRST204 with a message like
+# "Could not find the 'X' column of 'T' in the schema cache".
+_MISSING_COL_RE = re.compile(r"Could not find the '([^']+)' column")
+
 
 class SupabaseStorage:
     def __init__(self, url: str, key: str) -> None:
         self._client: Client = create_client(url, key)
         # tiny cache: symbol -> instrument_id
         self._instrument_ids: dict[str, str] = {}
+
+    def _insert_resilient(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert a row, but if the schema is missing an optional column (schema
+        drift — a migration not yet applied), drop that column and retry rather
+        than losing the whole record. Persisting the payload matters more than a
+        cosmetic label; the dropped column is logged so it's visible."""
+        payload = dict(row)
+        for _ in range(len(payload) + 1):
+            try:
+                res = self._client.table(table).insert(payload).execute()
+                return res.data[0] if res.data else {}
+            except Exception as exc:  # noqa: BLE001
+                m = _MISSING_COL_RE.search(str(exc))
+                if not m or m.group(1) not in payload:
+                    raise
+                col = m.group(1)
+                payload.pop(col, None)
+                log.warning("%s: column '%s' missing from schema — inserting without it "
+                            "(apply the pending migration to keep it)", table, col)
+        raise RuntimeError(f"{table}: could not insert after dropping unknown columns")
 
     # --- instruments ----------------------------------------------
     def upsert_instruments(self, instruments: list[dict[str, Any]]) -> None:
@@ -101,8 +126,7 @@ class SupabaseStorage:
         self._client.table("positions").update(fields).eq("id", position_id).execute()
 
     def insert_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
-        res = self._client.table("calibrations").insert(row).execute()
-        return res.data[0] if res.data else {}
+        return self._insert_resilient("calibrations", row)
 
     def get_latest_calibration(self) -> dict[str, Any] | None:
         res = (self._client.table("calibrations").select("*")
@@ -126,8 +150,7 @@ class SupabaseStorage:
         self._client.table("prospect_forecasts").insert(row).execute()
 
     def insert_prospect_calibration(self, row: dict[str, Any]) -> dict[str, Any]:
-        res = self._client.table("prospect_calibrations").insert(row).execute()
-        return res.data[0] if res.data else {}
+        return self._insert_resilient("prospect_calibrations", row)
 
     def get_latest_prospect_calibration(self, kind: str | None = None) -> dict[str, Any] | None:
         q = self._client.table("prospect_calibrations").select("*")

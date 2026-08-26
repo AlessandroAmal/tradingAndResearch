@@ -140,9 +140,11 @@ def conditional_distribution(
             rets.append(fwd[t])
     if len(rets) < 2:
         return {"conditions": dict(conditions), "n": len(rets), "n_effective": 0,
-                "sufficient": False, "note": "campione insufficiente, non mostrato come probabilità"}
+                "min_effective": min_effective, "sufficient": False,
+                "note": "campione insufficiente, non mostrato come probabilità"}
     dist = _distribution(rets, h, level_ret)
     dist["conditions"] = dict(conditions)
+    dist["min_effective"] = min_effective
     dist["sufficient"] = dist["n_effective"] >= min_effective
     if not dist["sufficient"]:
         dist["note"] = (f"n effettivo {dist['n_effective']} < {min_effective}: "

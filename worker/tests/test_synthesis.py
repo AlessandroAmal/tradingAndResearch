@@ -89,6 +89,38 @@ def test_rsi_contributes_only_when_weighted():
     assert rsi["kind"] == "directional" and rsi["classification"] == BEARISH  # overbought
 
 
+def test_zero_weight_macro_driver_is_not_a_lean_driver():
+    # A context driver (weight 0, e.g. the debt series) must NOT drive the gauge.
+    drivers = _drivers("headwind", "tailwind")
+    drivers.append({"id": "GFDEGDQ188S", "label": "Debito/PIL", "value": 120.0,
+                    "direction": "up", "state": "tailwind", "weight": 0.0})
+    r = confluence_read(drivers=drivers, technicals=_tech(), implied=None, next_event=None)
+    debt = next(f for f in r["factors"] if f["key"] == "macro:GFDEGDQ188S")
+    assert debt["weight"] == 0.0 and debt.get("contribution") is None
+    assert not any(d["key"] == "macro:GFDEGDQ188S" for d in r["lean"]["top_drivers"])
+
+
+def test_weight_source_labels_calibrated_vs_config():
+    r = confluence_read(drivers=_drivers("headwind", "tailwind"), technicals=_tech(),
+                        implied=None, next_event=None,
+                        weights={"trend_ma": 0.05, "rsi": 0.09},
+                        calibrated_keys={"rsi", "trend_ma"})
+    by = {f["key"]: f for f in r["factors"]}
+    assert by["rsi"]["weight_source"] == "calibrato"
+    assert by["trend_ma"]["weight_source"] == "calibrato"
+    assert by["macro:DFII10"]["weight_source"] == "config"
+
+
+def test_no_weight_reason_when_all_directional_zeroed():
+    # All directional factors at weight 0 -> explicit neutral state, not "insufficient data".
+    drivers = [{"id": "DFII10", "label": "Tasso reale", "value": 2.1, "direction": "up",
+                "state": "headwind", "weight": 0.0}]
+    r = confluence_read(drivers=drivers, technicals=_tech(), implied=None, next_event=None,
+                        weights={"trend_ma": 0.0, "rsi": 0.0})
+    assert r["lean"]["score"] is None
+    assert r["lean"]["no_weight_reason"] and "peso 0" in r["lean"]["no_weight_reason"]
+
+
 # --- aggregation -----------------------------------------------------
 def test_lean_score_weighted_mean():
     # DFII10 bearish (-1, w1), DTWEXBGS bullish (+1, w1), T10YIE neutral (0, w0.5),

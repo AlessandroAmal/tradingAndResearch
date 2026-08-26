@@ -28,6 +28,20 @@ async function post(path, body) {
   }
 }
 
+async function get(path) {
+  if (!apiConfigured) {
+    return { data: null, error: new Error('API non configurata (VITE_API_URL / VITE_API_TOKEN)') }
+  }
+  try {
+    const res = await fetch(`${API_URL}${path}`, { headers: { 'X-API-Token': API_TOKEN } })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) return { data: null, error: new Error(json?.detail || `HTTP ${res.status}`) }
+    return { data: json, error: null }
+  } catch (e) {
+    return { data: null, error: e }
+  }
+}
+
 // FREE: refresh the non-AI data + rebuild the decision board(s).
 export function refresh() {
   return post('/refresh')
@@ -54,4 +68,16 @@ export function refreshProspects() {
 }
 export function calibrateProspects() {
   return post('/prospects/calibrate')
+}
+
+// Background-job status pollers (state: idle|running|done|error, elapsed_sec,
+// progress/total/step, result, error, duration_sec, stale).
+export function getCalibrateStatus() {
+  return get('/calibrate/status')
+}
+export function getProspectsStatus() {
+  return get('/prospects/status')
+}
+export function getProspectsCalibrateStatus() {
+  return get('/prospects/calibrate/status')
 }
