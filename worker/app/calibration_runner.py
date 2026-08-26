@@ -13,10 +13,15 @@ from datetime import date, datetime, timezone
 
 from .calibration import (
     HORIZONS,
+    apply_fdr,
     calibrate_signals,
     causal_technical_signals,
     derive_weights,
 )
+
+# Below this many years of macro coverage, a factor spans essentially one macro
+# regime → high risk that any "edge" is a regime artefact, not a real relation.
+MACRO_SHORT_WINDOW_YEARS = 3.0
 from .config import AppConfig
 from .logging_setup import get_logger
 from .storage import Storage
@@ -58,6 +63,22 @@ def _asof_direction_signal(price_dates, macro_rows, supportive_when):
     return out
 
 
+def _coverage(dates, signal) -> dict:
+    """Period actually covered by a macro signal (first→last non-None date) + years
+    + a short-window flag. Macro series can be much shorter than the price history."""
+    idx = [i for i, s in enumerate(signal) if s is not None]
+    if not idx:
+        return {"covered_from": None, "covered_to": None, "covered_years": 0.0,
+                "short_window": True}
+    d0, d1 = dates[idx[0]], dates[idx[-1]]
+    try:
+        years = (date.fromisoformat(d1) - date.fromisoformat(d0)).days / 365.25
+    except (TypeError, ValueError):
+        years = 0.0
+    return {"covered_from": d0, "covered_to": d1, "covered_years": round(years, 1),
+            "short_window": years < MACRO_SHORT_WINDOW_YEARS}
+
+
 def run_calibration(cfg: AppConfig, storage: Storage, price_provider, *, progress=None) -> dict:
     db_cfg = dict(cfg.raw.get("decision_board", {}) or {})
     instruments = list(db_cfg.get("instruments", []) or [])
@@ -92,23 +113,42 @@ def run_calibration(cfg: AppConfig, storage: Storage, price_provider, *, progres
             oversold=float(rsi_cfg.get("oversold", 30)))
 
         # macro drivers (FRED only; price-source drivers like ^VIX -> use prices)
+        macro_signals: dict[str, list] = {}
         for drv in inst.get("macro_drivers", []):
             if (drv.get("source") or "fred").lower() != "fred":
                 continue
             rows = storage.get_macro_series(drv.get("id"), 4000)
-            signals[f"macro:{drv.get('id')}"] = _asof_direction_signal(
-                dates, rows, drv.get("supportive_when"))
+            sig = _asof_direction_signal(dates, rows, drv.get("supportive_when"))
+            key = f"macro:{drv.get('id')}"
+            signals[key] = sig
+            macro_signals[key] = sig
 
         cal = calibrate_signals(signals, closes, horizons=HORIZONS)
         test_count += cal["test_count"]
+        # Macro window: annotate each macro cell with the PERIOD COVERED + a short-
+        # window flag (a single macro regime is a high artefact risk).
+        for key, sig in macro_signals.items():
+            cov = _coverage(dates, sig)
+            for h in HORIZONS:
+                cell = cal["factors"].get(key, {}).get(str(h))
+                if isinstance(cell, dict):
+                    cell.update(cov)
         # attach non-testable factors as honest placeholders
         for k, why in _NON_TESTABLE.items():
             cal["factors"][k] = {"non_testable": True, "reason": why}
         results[symbol] = cal["factors"]
 
-        dw = derive_weights({k: v for k, v in cal["factors"].items() if isinstance(v, dict) and "non_testable" not in v},
+    # Multiple-testing correction ACROSS the whole family (factors × horizons ×
+    # instruments): finalises `significant` = per-test CI gate AND BH-FDR survivor.
+    fdr = apply_fdr(results, q=float(db_cfg.get("calibration_fdr_q", 0.05)))
+    log.info("Calibration FDR: %d/%d survivors (family %d, threshold %s)",
+             fdr["survivors"], test_count, fdr["family_size"], fdr["fdr_threshold"])
+
+    # Evidence-based weights AFTER the FDR pass, so only true survivors get weight.
+    for symbol, factors in results.items():
+        dw = derive_weights({k: v for k, v in factors.items()
+                             if isinstance(v, dict) and "non_testable" not in v},
                             horizon=WEIGHT_HORIZON)
-        # keep only the lean-weight keys the board actually applies
         weights[symbol] = {k: v for k, v in dw.items() if k in _LEAN_KEYS}
 
     row = {
@@ -116,6 +156,7 @@ def run_calibration(cfg: AppConfig, storage: Storage, price_provider, *, progres
         "period_start": period_start, "period_end": date.today().isoformat(),
         "horizons": list(HORIZONS), "test_count": test_count,
         "weight_horizon": WEIGHT_HORIZON,
+        "fdr": fdr,
         "results": results, "weights": weights,
     }
     try:

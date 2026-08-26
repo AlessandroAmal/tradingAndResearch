@@ -376,16 +376,30 @@ class SupabaseStorage:
         log.info("Upserted %d macro observations", len(rows))
 
     def get_macro_series(self, series_id: str, limit: int) -> list[dict[str, Any]]:
-        return (
-            self._client.table("macro_series")
-            .select("value, obs_date")
-            .eq("series_id", series_id)
-            .order("obs_date", desc=True)
-            .limit(limit)
-            .execute()
-            .data
-            or []
-        )
+        # PostgREST caps a response at its server-side max-rows (default 1000)
+        # regardless of .limit(), so a long FRED history (~15y ≈ 3700 rows) would
+        # be silently truncated. Page through with .range() to get the full window
+        # the calibration needs (a short macro window = regime-artefact risk).
+        page = 1000
+        out: list[dict[str, Any]] = []
+        start = 0
+        while start < limit:
+            end = min(start + page, limit) - 1
+            rows = (
+                self._client.table("macro_series")
+                .select("value, obs_date")
+                .eq("series_id", series_id)
+                .order("obs_date", desc=True)
+                .range(start, end)
+                .execute()
+                .data
+                or []
+            )
+            out.extend(rows)
+            if len(rows) < (end - start + 1):
+                break            # last page reached
+            start += page
+        return out
 
     def list_statements_by_figure(self, figure: str, limit: int) -> list[dict[str, Any]]:
         return (

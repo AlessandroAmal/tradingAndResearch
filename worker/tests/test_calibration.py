@@ -3,13 +3,59 @@ count, evidence-based weights (contrary zeroed not inverted). Synthetic fixtures
 from pytest import approx
 
 from app.calibration import (
+    apply_fdr,
+    benjamini_hochberg_threshold,
     calibrate_factor,
     calibrate_signals,
     causal_technical_signals,
     derive_weights,
+    effective_n,
     forward_returns,
     spearman,
 )
+
+
+def test_effective_n_discounts_overlap():
+    # 2380 daily obs of a 21-day return are ~113 independent draws, not 2380.
+    assert effective_n(2380, 21) == 113
+    assert effective_n(200, 1) == 200          # h=1: no overlap discount
+    assert effective_n(10, 21) == 0            # fewer obs than the horizon
+
+
+def test_significance_gates_on_effective_not_raw_n():
+    # A weak-but-nonzero signal with raw n well over 30 but EFFECTIVE n below it
+    # must NOT be flagged significant (the raw-n gate would have passed it).
+    closes = [100.0 * (1.01 ** i) for i in range(120)]   # smooth uptrend
+    sig = [1.0] * len(closes)
+    r = calibrate_factor(sig, closes, 21)                 # n_eff ≈ 99//21 ≈ 4
+    assert r["n_effective"] < 30 and r["significant"] is False
+
+
+def test_benjamini_hochberg_threshold_controls_family():
+    # Only the smallest p-values survive BH at q=0.05 over a family of 10.
+    pvals = [0.001, 0.002, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    t = benjamini_hochberg_threshold(pvals, q=0.05)
+    assert t is not None and t == 0.002
+    # A family where nothing passes returns None.
+    assert benjamini_hochberg_threshold([0.4, 0.5, 0.9], q=0.05) is None
+
+
+def test_apply_fdr_downgrades_and_flags_anomalous():
+    results = {
+        "GC=F": {
+            "rsi": {"5": {"ic": 0.09, "p_value": 0.001, "significant_ci": True}},
+            "trend_ma": {"5": {"ic": -0.08, "p_value": 0.002, "significant_ci": True}},
+            "streak": {"5": {"ic": 0.05, "p_value": 0.30, "significant_ci": True}},
+        }
+    }
+    summary = apply_fdr(results, q=0.05)
+    rsi = results["GC=F"]["rsi"]["5"]
+    trend = results["GC=F"]["trend_ma"]["5"]
+    streak = results["GC=F"]["streak"]["5"]
+    assert rsi["significant"] is True and rsi["anomalous_sign"] is False
+    assert trend["significant"] is True and trend["anomalous_sign"] is True   # IC<0
+    assert streak["significant"] is False                                     # FDR drops it
+    assert summary["survivors"] == 2
 
 
 def test_spearman_monotonic():

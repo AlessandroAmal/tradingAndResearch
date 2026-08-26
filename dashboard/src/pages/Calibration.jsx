@@ -22,21 +22,56 @@ function labelFactor(name) {
   return name
 }
 // A factor×horizon is a SURVIVOR when the calibration marked it significant
-// (bootstrap CI excludes 0, n≥30) — i.e. it survived deflation.
+// (block-bootstrap CI excludes 0, effective n≥30, AND passes the FDR correction).
+// Adjacent horizons for the same factor×instrument are GROUPED into one row with a
+// horizon range, so a factor surviving at 5/10/15g is one story, not three.
 function collectSurvivors(results) {
-  const out = []
+  const groups = []
   for (const [symbol, factors] of Object.entries(results || {})) {
     for (const [name, byH] of Object.entries(factors || {})) {
       if (!byH || byH.non_testable) continue
-      for (const h of HORIZONS) {
-        const st = byH[String(h)]
-        if (st && st.significant && st.ic != null) {
-          out.push({ symbol, name, horizon: h, ic: st.ic, n: st.n })
-        }
+      // horizons (in canonical order) where this factor×instrument survived
+      const hits = HORIZONS.map((h, i) => ({ h, i, st: byH[String(h)] }))
+        .filter((x) => x.st && x.st.significant && x.st.ic != null)
+      if (!hits.length) continue
+      // split into runs of ADJACENT horizons (consecutive indices in HORIZONS)
+      let run = [hits[0]]
+      const runs = []
+      for (let k = 1; k < hits.length; k++) {
+        if (hits[k].i === run[run.length - 1].i + 1) run.push(hits[k])
+        else { runs.push(run); run = [hits[k]] }
+      }
+      runs.push(run)
+      for (const r of runs) {
+        const ics = r.map((x) => x.st.ic)
+        const peak = ics.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a))
+        groups.push({
+          symbol, name,
+          hFrom: r[0].h, hTo: r[r.length - 1].h, span: r.length,
+          icMin: Math.min(...ics), icMax: Math.max(...ics), peak,
+          nEff: Math.min(...r.map((x) => x.st.n_effective ?? 0)),
+          anomalous: r.some((x) => x.st.anomalous_sign),
+          shortWindow: r.some((x) => x.st.short_window),
+        })
       }
     }
   }
-  return out.sort((a, b) => Math.abs(b.ic) - Math.abs(a.ic))
+  return groups.sort((a, b) => Math.abs(b.peak) - Math.abs(a.peak))
+}
+function horizonRange(g) {
+  return g.hFrom === g.hTo ? `${g.hFrom}g` : `${g.hFrom}–${g.hTo}g`
+}
+// Macro coverage (period + years + short-window) is duplicated across horizons;
+// read it off any cell that carries it. Returns null for non-macro factors.
+function macroCoverage(byH) {
+  for (const h of HORIZONS) {
+    const st = byH[String(h)]
+    if (st && st.covered_years != null) return st
+  }
+  return null
+}
+function icRange(g) {
+  return g.icMin === g.icMax ? fmtNum(g.peak, 3) : `${fmtNum(g.icMin, 3)}…${fmtNum(g.icMax, 3)}`
 }
 
 // CALIBRAZIONE INDICATORI — does each factor actually predict? MEASURED, no
@@ -93,26 +128,31 @@ export default function Calibration() {
             <span className="muted small">fattori significativi post-deflazione su {cal.test_count} test · l’output principale del run</span>
           </header>
           {survivors.length === 0 ? (
-            <p className="honest-note">Nessun fattore ha superato la deflazione: su {cal.test_count} test, nessun IC è risultato significativo dopo la correzione per test multipli. <strong>È un esito legittimo e informativo</strong> — la maggior parte degli indicatori non predice a questi orizzonti.</p>
+            <p className="honest-note">Nessun fattore ha superato la deflazione: su {cal.test_count} test, nessun IC resta significativo dopo block-bootstrap (n effettivo) e correzione FDR. <strong>È un esito legittimo e informativo</strong> — la maggior parte degli indicatori non predice a questi orizzonti.</p>
           ) : (
             <>
               <div className="risk-table-wrap">
                 <table className="risk-table">
-                  <thead><tr><th>Strumento</th><th>Fattore</th><th>Orizzonte</th><th>IC</th><th>n</th></tr></thead>
+                  <thead><tr><th>Strumento</th><th>Fattore</th><th>Orizzonti</th><th>IC</th><th>n eff.</th><th>Nota</th></tr></thead>
                   <tbody>
                     {survivors.map((s, i) => (
-                      <tr key={i} className="survivor-row">
+                      <tr key={i} className={s.anomalous ? 'excluded' : 'survivor-row'}>
                         <td><button className="linklike" onClick={() => setSel(s.symbol)}>{s.symbol}</button></td>
                         <td>{labelFactor(s.name)}</td>
-                        <td className="muted small">{s.horizon}g</td>
-                        <td className={s.ic > 0 ? 'pos' : 'neg'}><strong>{fmtNum(s.ic, 3)}</strong>{s.ic > 0 ? ' ↑' : ' ↓'}</td>
-                        <td className="muted">{s.n ?? '—'}</td>
+                        <td className="muted small">{horizonRange(s)}{s.span > 1 ? ` (${s.span})` : ''}</td>
+                        <td className={s.peak > 0 ? 'pos' : 'neg'}><strong>{icRange(s)}</strong>{s.peak > 0 ? ' ↑' : ' ↓'}</td>
+                        <td className="muted">{s.nEff || '—'}</td>
+                        <td className="muted small">
+                          {s.anomalous && <span className="neg">⚠ segno anomalo — escluso dai pesi</span>}
+                          {!s.anomalous && s.shortWindow && <span className="warn">⚠ finestra breve (&lt;3 anni)</span>}
+                          {!s.anomalous && !s.shortWindow && <span className="pos">edge candidato</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <p className="muted small caveat">IC positivo = il fattore alto anticipa rendimenti futuri più alti; negativo = più bassi. Un IC significativo NON è una previsione: è una correlazione di rango debole, misurata out-of-sample. I «contrari» (IC significativo ma di segno sbagliato per la lancetta) vengono azzerati, non invertiti.</p>
+              <p className="muted small caveat">IC positivo = il fattore alto anticipa rendimenti futuri più alti; negativo = più bassi. «n eff.» = osservazioni indipendenti (≈ n/orizzonte, per le finestre sovrapposte). Significatività = CI block-bootstrap esclude 0 <strong>e</strong> supera la correzione FDR (Benjamini-Hochberg) su {cal.test_count} test. <strong>⚠ segno anomalo</strong> = IC significativo ma di segno contrario all'atteso economico → azzerato, non invertito, NON entra nei pesi/tilt. Un IC significativo NON è una previsione.</p>
             </>
           )}
         </section>
@@ -131,22 +171,28 @@ export default function Calibration() {
             <table className="risk-table heatmap">
               <thead><tr><th>Fattore</th>{HORIZONS.map((h) => <th key={h}>{h}g</th>)}</tr></thead>
               <tbody>
-                {testable.map(([name, byH]) => (
+                {testable.map(([name, byH]) => {
+                  const cov = macroCoverage(byH)
+                  return (
                   <tr key={name}>
-                    <td>{labelFactor(name)}</td>
+                    <td>{labelFactor(name)}
+                      {cov && <><br /><span className={`muted small ${cov.short_window ? 'warn' : ''}`} title={cov.short_window ? 'finestra breve: un solo regime macro — alto rischio artefatto' : ''}>{cov.covered_from?.slice(0, 4)}–{cov.covered_to?.slice(0, 4)} · {cov.covered_years}a{cov.short_window ? ' ⚠' : ''}</span></>}
+                    </td>
                     {HORIZONS.map((h) => {
                       const st = byH[String(h)] || {}
-                      return <td key={h} className={cell(st)} title={`IC=${st.ic == null ? 'n/d' : fmtNum(st.ic, 3)} · n=${st.n ?? '—'}${st.significant ? ' · SOPRAVVISSUTO (significativo post-deflazione)' : ''}`}>
-                        {st.significant && <span className="survivor-badge">✓</span>}
-                        {st.ic == null ? '—' : fmtNum(st.ic, 2)}<br /><span className="muted small">n={st.n ?? '—'}</span>
+                      const anom = st.significant && st.anomalous_sign
+                      return <td key={h} className={cell(st)} title={`IC=${st.ic == null ? 'n/d' : fmtNum(st.ic, 3)} · n=${st.n ?? '—'} · n eff.=${st.n_effective ?? '—'}${st.significant ? (anom ? ' · SOPRAVVISSUTO ma SEGNO ANOMALO' : ' · SOPRAVVISSUTO (CI + FDR)') : ''}`}>
+                        {st.significant && <span className={`survivor-badge ${anom ? 'neg' : ''}`}>{anom ? '⚠' : '✓'}</span>}
+                        {st.ic == null ? '—' : fmtNum(st.ic, 2)}<br /><span className="muted small">n{st.n ?? '—'}·e{st.n_effective ?? '—'}</span>
                       </td>
                     })}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
-          <p className="muted small caveat">IC = correlazione di rango fattore→rendimento futuro. <span className="survivor-badge">✓</span> = SOPRAVVISSUTO: CI bootstrap esclude 0 e n≥30 (verde=IC positivo, rosso=negativo). n sempre visibile; sotto soglia = campione insufficiente, non una probabilità.</p>
+          <p className="muted small caveat">IC = correlazione di rango fattore→rendimento futuro. <span className="survivor-badge">✓</span> = SOPRAVVISSUTO (CI block-bootstrap esclude 0, n eff.≥30, e supera FDR); <span className="survivor-badge neg">⚠</span> = sopravvissuto ma segno anomalo. «n·e» = n grezzo · n effettivo (≈ n/orizzonte, per finestre sovrapposte). Sotto la riga macro: periodo coperto e anni (⚠ = finestra breve &lt;3 anni, alto rischio artefatto di regime).</p>
 
           <h3 className="ctx-h muted small">Non testabili con i dati disponibili</h3>
           <ul className="tight">{nonTestable.map(([name, v]) => <li key={name} className="muted small">{labelFactor(name)}: {v.reason}</li>)}</ul>

@@ -493,7 +493,10 @@ decision_board:
   enabled: true
   macro:
     provider: fred
-    history_days: 400          # FRED lookback pulled per series (covers the regime window)
+    # Pull the FULL FRED history (~15y): the calibration needs many macro regimes,
+    # not one — a short window makes any macro "edge" a likely regime artefact.
+    # FRED series go back decades; the board's regime percentile uses `lookback_days`.
+    history_days: 5475         # ~15y of FRED history pulled per series
     # Level/regime classification: a driver's STATE considers where its level
     # sits in its own history (percentile over `lookback_days`), not just the
     # daily move — so a high-but-falling real yield stays a structural headwind.
