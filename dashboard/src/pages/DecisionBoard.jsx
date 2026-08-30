@@ -5,6 +5,7 @@ import { probAbove } from '../lib/options'
 import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
 import InfoTip from '../components/InfoTip'
 import ConfluenceGauge from '../components/ConfluenceGauge'
+import LevelInput from '../components/LevelInput'
 import { ProbBar, PercentileBar, RsiBar } from '../components/Indicators'
 import { MonitorTestForm, conditionsFromBoard } from '../components/PaperMonitor'
 import Prospects from './Prospects'
@@ -259,10 +260,8 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
             <div className="band-cell band-odds">
               <div className="band-label">Odds del mercato <InfoTip text={DH.implied_prob.text} label={DH.implied_prob.label} /></div>
               <ProbBar value={market?.prob_up} caption={`Prob. salita${market?.horizon ? ` · ~${market.horizon}g` : ''}`} />
-              <label className="band-level">Livello scelto
-                <input type="number" step="any" value={level} onChange={(e) => setLevel(e.target.value)}
-                  placeholder={board.last != null ? fmtNum(board.last, 0) : 'prezzo'} />
-              </label>
+              <LevelInput label="Livello scelto" labelClass="band-level" value={level} onChange={setLevel}
+                placeholder={board.last != null ? fmtNum(board.last, 0) : 'prezzo'} />
               <p className="band-caveat">Probabilità <strong>IMPLICITA</strong> nelle opzioni (risk-neutral): il numero calibrato, gli odds del mercato. Dettaglio per orizzonte sotto.</p>
               <Incorporates how="Ricavata dai prezzi delle opzioni (Black-Scholes risk-neutral)."
                 inputs={[{ name: 'Catena opzioni ' + (board.implied?.underlying || ''), source: 'yfinance', role: 'IV ATM per orizzonte' }]}
@@ -850,14 +849,8 @@ function ImpliedPanel({ implied, level, onLevelChange }) {
               : null
           })()}
           <div className="desk-controls">
-            <label>Il tuo livello (prezzo)
-              <input
-                type="number" step="any" inputMode="decimal"
-                placeholder={spot != null ? `es. ${fmtNum(spot, 0)}` : 'prezzo'}
-                value={level}
-                onChange={(e) => onLevelChange(e.target.value)}
-              />
-            </label>
+            <LevelInput value={level} onChange={onLevelChange}
+              placeholder={spot != null ? `es. ${fmtNum(spot, 0)}` : 'prezzo'} />
             {K != null
               ? <span className="chip">prob. sopra/sotto {fmtNum(K, 2)}</span>
               : <span className="muted small">vuoto = ATM (≈ prezzo corrente {fmtNum(implied.level, 2)})</span>}

@@ -4,6 +4,7 @@ import { refreshProspects, calibrateProspects, getProspectsStatus, getProspectsC
 import { useJobStatus, runningLabel, doneLabel } from '../lib/useJobStatus'
 import { fmtNum, fmtPct } from '../lib/format'
 import InfoTip from '../components/InfoTip'
+import LevelInput from '../components/LevelInput'
 
 const HLABEL = { '1s': '1 settimana', '1m': '1 mese', '3m': '3 mesi', '6m': '6 mesi', '1a': '1 anno', '5a': '5 anni' }
 
@@ -178,7 +179,7 @@ function ChosenLevel({ snap, level, setLevel, levelRet, K }) {
     <section className="panel">
       <header className="panel-head"><h2>Livello scelto</h2><span className="muted small">prob. sopra/sotto per orizzonte · opzioni vs storico</span></header>
       <div className="desk-controls">
-        <label>Il tuo livello (prezzo)<input type="number" step="any" value={level} onChange={(e) => setLevel(e.target.value)} placeholder={snap.spot ? `es. ${fmtNum(snap.spot, 0)}` : ''} /></label>
+        <LevelInput value={level} onChange={setLevel} placeholder={snap.spot ? `es. ${fmtNum(snap.spot, 0)}` : ''} />
         {K != null && <span className="chip">prob. sopra {fmtNum(K, 2)}</span>}
       </div>
       {K == null ? <p className="muted small">Inserisci un livello per vedere le probabilità.</p> : (

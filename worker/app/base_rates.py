@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 
+from .historical_engine import matched_forward_returns, streak_occurrence_indices
 from .technicals import consecutive_streak, plural_days
 
 # Fixed honesty caveat surfaced alongside every streak base rate.
@@ -66,25 +67,6 @@ class BaseRateResult:
         return asdict(self)
 
 
-def _run_lengths(closes: Sequence[float]) -> tuple[list[int], list[str]]:
-    """Trailing run length + direction at each index (index 0 = no prior)."""
-    n = len(closes)
-    lengths = [0] * n
-    dirs = ["flat"] * n
-    for i in range(1, n):
-        diff = closes[i] - closes[i - 1]
-        if diff == 0:
-            lengths[i], dirs[i] = 0, "flat"
-        else:
-            d = "up" if diff > 0 else "down"
-            if d == dirs[i - 1] and lengths[i - 1] > 0:
-                lengths[i] = lengths[i - 1] + 1
-            else:
-                lengths[i] = 1
-            dirs[i] = d
-    return lengths, dirs
-
-
 def _mean(xs: Sequence[float]) -> float | None:
     return sum(xs) / len(xs) if xs else None
 
@@ -115,12 +97,12 @@ def streak_base_rate(
             message="Nessuno streak in corso (ultima variazione piatta o assente).",
         )
 
-    lengths, dirs = _run_lengths(closes)
     L, D = streak.length, streak.direction
     last_idx = n_bars - 1
 
-    # Occurrences = days where the trailing run reached exactly L in direction D.
-    occurrences = [i for i in range(1, n_bars) if lengths[i] == L and dirs[i] == D]
+    # Occurrences = days where the trailing run reached exactly L in direction D —
+    # the STREAK expressed as one regime of the shared historical engine.
+    occurrences = streak_occurrence_indices(closes, L, D)
     in_progress = last_idx in occurrences
     # Past occurrences = those with at least one following day (an outcome).
     past = [i for i in occurrences if i + 1 < n_bars]
@@ -138,11 +120,7 @@ def streak_base_rate(
 
     stats: list[HorizonStat] = []
     for h in horizons:
-        rets = [
-            closes[i + h] / closes[i] - 1.0
-            for i in past
-            if i + h < n_bars and closes[i] != 0
-        ]
+        rets = matched_forward_returns(closes, past, h)   # shared engine
         if rets:
             ups = sum(1 for r in rets if r > 0)
             stats.append(

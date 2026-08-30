@@ -21,17 +21,9 @@ import random
 import statistics
 from collections.abc import Mapping, Sequence
 
-
-def forward_returns(closes: Sequence[float], h: int) -> list[float | None]:
-    """r_{t→t+h} aligned to t (None where t+h out of range). No look-ahead."""
-    n = len(closes)
-    out: list[float | None] = []
-    for t in range(n):
-        if t + h < n and closes[t] > 0:
-            out.append(closes[t + h] / closes[t] - 1.0)
-        else:
-            out.append(None)
-    return out
+# Shared historical engine (AUDIT2 §6.A #4): one core for forward returns +
+# effective n, and the STREAK as a selectable regime alongside terciles/direction.
+from ..historical_engine import effective_n, forward_returns, streak_regime  # noqa: F401
 
 
 def tercile_regime(values: Sequence[float | None]) -> list[str | None]:
@@ -69,11 +61,6 @@ def direction_regime(values: Sequence[float | None], window: int = 20) -> list[s
         else:
             out.append("flat")
     return out
-
-
-def effective_n(n: int, h: int) -> int:
-    """Independent-window count for overlapping h-day returns (≈ n/h, ≥0)."""
-    return max(0, n // max(h, 1))
 
 
 def _block_bootstrap_ci(rets: Sequence[float], h: int, *, n_boot: int = 800,
