@@ -328,7 +328,7 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
             <Fold id="fond" title="Fondamentali, utili & sorprese" open>
               <DualLens lenses={board.lenses} boardNote={board.board_note} />
               <FullPicturePanel fp={board.full_picture} />
-              <FundamentalsPanel f={board.fundamentals} />
+              <FundamentalsPanel f={board.fundamentals} hasTrajectory={!!board.fundamentals.history?.metrics} />
               <TrajectoryPanel history={board.fundamentals.history} />
               <TonePanel tone={board.tone} symbol={board.symbol} quarters={board.fundamentals.history?.quarters} />
               <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
@@ -1168,28 +1168,36 @@ function FullPicturePanel({ fp }) {
 function ValuationIndicator({ ctx, asOf }) {
   if (!ctx || ctx.pe == null) return null
   const own = ctx.own_history
+  // §6.A #5 — ONE authoritative valuation history, declared: prefer the ACCUMULATED
+  // snapshots (real P/E day by day) once they have enough points (n≥8); until then
+  // fall back to the rough series RECONSTRUCTED from yfinance EPS. No two ambiguous
+  // percentiles side by side — one primary, labelled, with the reason.
+  const useOwn = own && own.percentile != null
   return (
     <div className="val-indicator">
-      {ctx.percentile != null ? (
+      {useOwn ? (
+        <PercentileBar pct={own.percentile}
+          caption={`Valutazione vs la propria storia ACCUMULATA · ${own.band} (n=${own.n})`} />
+      ) : ctx.percentile != null ? (
         <PercentileBar pct={ctx.percentile}
-          caption={`Valutazione vs la propria storia · ${ctx.band} (n=${ctx.n})`} />
+          caption={`Valutazione vs la propria storia ricostruita · ${ctx.band} (n=${ctx.n})`} />
       ) : (
         <p className="muted small">
-          Valutazione: <strong>{ctx.band}</strong> (P/E {ctx.basis} {fmtNum(ctx.pe, 0)}; storia P/E ricostruita insufficiente per un percentile)
+          Valutazione: <strong>{ctx.band}</strong> (P/E {ctx.basis} {fmtNum(ctx.pe, 0)}; storia P/E insufficiente per un percentile)
         </p>
       )}
-      {own && own.percentile != null && (
-        <p className="muted small">Vs la PROPRIA storia <strong>accumulata</strong> (n={own.n}): <strong>{own.band}</strong> — percentile {Math.round(own.percentile * 100)}%.</p>
-      )}
-      {own && own.percentile == null && (own.n || 0) > 0 && (
-        <p className="muted small">Storia valutazioni in accumulo (n={own.n}); il percentile «vs sé stessa» — e il tassello valutazione 3-5a nelle Prospettive — si riempie coi prossimi run.</p>
-      )}
+      <p className="muted small">
+        Storia usata: <strong>{useOwn ? 'accumulata' : 'ricostruita (approssimata da yfinance EPS)'}</strong>
+        {useOwn
+          ? ' — snapshot P/E reali giorno per giorno, la più affidabile.'
+          : ` — la storia accumulata (n=${own?.n ?? 0}) diventa autoritativa a n≥8 e riempirà anche il tassello valutazione 3-5a nelle Prospettive.`}
+      </p>
       <p className="muted small">{ctx.note} — non una previsione. Fonte: yfinance{asOf ? ` · al ${new Date(asOf).toLocaleDateString()}` : ''} (base P/E {ctx.basis}).</p>
     </div>
   )
 }
 
-function FundamentalsPanel({ f }) {
+function FundamentalsPanel({ f, hasTrajectory = false }) {
   const val = f.valuation || {}, g = f.growth || {}, q = f.quality || {}, c = f.cash || {}
   return (
     <section className="panel">
@@ -1207,16 +1215,21 @@ function FundamentalsPanel({ f }) {
       <ValuationIndicator ctx={val.context} asOf={f.as_of} />
       <p className="muted small">{readValuation(val)}</p>
 
-      <h3 className="ctx-h muted small">Crescita &amp; qualità</h3>
+      {/* §6.A #5 — Crescita e margini vivono nella "Traiettoria dei bilanci" (QoQ/YoY,
+          trend). Quando c'è, qui NON li ripetiamo: mostriamo solo lo snapshot che la
+          Traiettoria non copre (ROE); altrimenti la Traiettoria manca e teniamo lo snapshot. */}
+      <h3 className="ctx-h muted small">Qualità{hasTrajectory ? '' : ' & crescita'}</h3>
       <div className="stat-grid">
-        <Stat label="Ricavi YoY" value={pctOrNa(g.revenue_yoy)} cls={signCls(g.revenue_yoy)} />
-        <Stat label="Utili YoY" value={pctOrNa(g.earnings_yoy)} cls={signCls(g.earnings_yoy)} />
-        <Stat label="Margine lordo" value={pctOrNa(q.gross_margin)} />
-        <Stat label="Margine netto" value={pctOrNa(q.net_margin)} />
-        <Stat label="Margine oper." value={pctOrNa(q.operating_margin)} />
+        {!hasTrajectory && <Stat label="Ricavi YoY" value={pctOrNa(g.revenue_yoy)} cls={signCls(g.revenue_yoy)} />}
+        {!hasTrajectory && <Stat label="Utili YoY" value={pctOrNa(g.earnings_yoy)} cls={signCls(g.earnings_yoy)} />}
+        {!hasTrajectory && <Stat label="Margine lordo" value={pctOrNa(q.gross_margin)} />}
+        {!hasTrajectory && <Stat label="Margine netto" value={pctOrNa(q.net_margin)} />}
+        {!hasTrajectory && <Stat label="Margine oper." value={pctOrNa(q.operating_margin)} />}
         <Stat label="ROE" value={pctOrNa(q.roe)} />
       </div>
-      <p className="muted small">{readQuality(g, q)}</p>
+      {hasTrajectory
+        ? <p className="muted small">Crescita e margini (QoQ/YoY, trend) sono nella <strong>Traiettoria dei bilanci</strong> qui sotto — non ripetuti.</p>
+        : <p className="muted small">{readQuality(g, q)}</p>}
 
       <h3 className="ctx-h muted small">Cassa &amp; bilancio</h3>
       <div className="stat-grid">

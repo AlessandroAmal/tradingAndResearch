@@ -13,14 +13,12 @@ import Watchlist from './components/Watchlist'
 import InstrumentDetail from './components/InstrumentDetail'
 import Catalysts from './components/Catalysts'
 import TradeGate from './components/TradeGate'
-import PositionsTable from './components/PositionsTable'
 import SizingCalculator from './components/SizingCalculator'
 import BriefingPanel from './components/BriefingPanel'
 import KeyFigures from './components/KeyFigures'
 import StatusStrip from './components/StatusStrip'
 import MarketsOverview from './components/MarketsOverview'
 import { PaperPositions } from './components/PaperMonitor'
-import ConcentrationWarning from './components/ConcentrationWarning'
 import PortfolioReal from './components/PortfolioReal'
 import ExperimentResults from './pages/ExperimentResults'
 import DecisionBench from './pages/DecisionBench'
@@ -256,7 +254,8 @@ export default function App() {
       )}
 
       {primary === 'mercati' && (
-        <PortfolioReal instruments={instruments} priceBySymbol={priceBySymbol} onOpenAsset={openDecision} />
+        <PortfolioReal instruments={instruments} priceBySymbol={priceBySymbol} onOpenAsset={openDecision}
+          positions={realPositions} multiplierBySymbol={multiplierBySymbol} settings={riskSettings} nowMs={nowMs} />
       )}
 
       {primary === 'mercati' && (
@@ -349,13 +348,13 @@ export default function App() {
             onGuide={() => setPrimary('guida')} />
           <nav className="nav subnav" aria-label="Sezione portafoglio">
             {portBtn('posizioni', 'Posizioni & rischio')}
-            {portBtn('reale', 'Portafoglio reale')}
             {portBtn('andamento', 'Andamento & review')}
             {portBtn('alert', 'Alert')}
           </nav>
 
           {portTab === 'posizioni' && (
             <>
+              <p className="muted small">Le posizioni aperte (reali) e la concentrazione tematica vivono nella vista <strong>Portafoglio</strong> in <em>Mercati</em> (filtro «Trade»/«Tutto») — qui restano gli STRUMENTI per aprire e monitorare un trade.</p>
               <main className="grid grid-trading">
                 <div className="col-left">
                   <TradeGate
@@ -370,33 +369,6 @@ export default function App() {
                   />
                 </div>
                 <div className="col-main">
-                  <ConcentrationWarning
-                    positions={realPositions}
-                    priceBySymbol={priceBySymbol}
-                    multiplierBySymbol={multiplierBySymbol}
-                    instruments={instruments}
-                  />
-                  <section className="panel">
-                    <header className="panel-head">
-                      <h2>Posizioni aperte (reali)</h2>
-                      {loading && <span className="muted small">aggiorno…</span>}
-                    </header>
-                    {errors.positions && (
-                      <p className="error">Posizioni non disponibili — {errors.positions}</p>
-                    )}
-                    {errors.risk && (
-                      <p className="error small">
-                        Impostazioni di rischio non disponibili — {errors.risk} (applica la 0007 + seed)
-                      </p>
-                    )}
-                    <PositionsTable
-                      positions={realPositions}
-                      priceBySymbol={priceBySymbol}
-                      multiplierBySymbol={multiplierBySymbol}
-                      settings={riskSettings}
-                      nowMs={nowMs}
-                    />
-                  </section>
                   <section className="panel">
                     <header className="panel-head">
                       <h2>Posizioni di test (paper)</h2>
@@ -415,10 +387,6 @@ export default function App() {
             </>
           )}
 
-          {portTab === 'reale' && (
-            <PortfolioReal instruments={instruments} priceBySymbol={priceBySymbol} onOpenAsset={openDecision} />
-          )}
-
           {portTab === 'andamento' && (
             <>
               <Expectancy settings={riskSettings} multiplierBySymbol={multiplierBySymbol} refreshKey={refreshKey} />
@@ -434,27 +402,23 @@ export default function App() {
 
       {primary === 'ricerca' && (
         <>
-          <TabHeader title="Ricerca — questa mia intuizione ha valore reale? (misuriamola)"
-            purpose="Laboratorio di evidenza (avanzato): backtest, calibrazione degli indicatori, esperimento eventi. Read-only, mai un segnale."
+          <TabHeader title="Laboratorio — questa mia intuizione ha valore reale? (misuriamola)"
+            purpose="UN solo laboratorio di evidenza (avanzato). Scegli l'oggetto dell'analisi qui sotto. Read-only, mai un segnale."
             howto={[
-              'Guarda il NETTO out-of-sample vs buy&hold; lo Sharpe deflazionato sconta il data-snooping.',
-              'La Calibrazione indicatori RICALIBRA la lancetta di confluenza usata in ASSET (peso ∝ IC solo dei fattori significativi).',
-              'L’esperimento eventi misura cosa succede dopo i dati USA: n sempre visibile, sotto soglia = rumore.',
+              'Regola tecnica → backtest OOS; Fattore → IC per orizzonte; Evento → cosa fa il prezzo dopo i dati USA; Episodio → pattern pluriennali rari.',
+              'La Calibrazione dei FATTORI ricalibra la lancetta di confluenza usata in ASSET (peso ∝ IC solo dei significativi).',
             ]}
             onGuide={() => setPrimary('guida')} />
-          <nav className="nav subnav" aria-label="Sezione ricerca">
-            {ricercaBtn('backtest', 'Backtest')}
-            {ricercaBtn('calibrazione', 'Calibrazione indicatori')}
-            {ricercaBtn('esperimento', 'Esperimento eventi')}
-            {ricercaBtn('episodi', 'Episodi')}
+          {/* Filosofia anti-data-snooping condivisa UNA volta per tutto il laboratorio */}
+          <p className="honest-note small">Regola condivisa del laboratorio: ogni analisi mostra sempre <strong>n</strong> (campione), sconta il <strong>data-snooping</strong> (deflazione / correzione per test multipli) e sotto soglia dichiara «campione insufficiente». Nulla qui è un segnale operativo: è misura, non previsione.</p>
+          <nav className="nav subnav" aria-label="Oggetto dell'analisi">
+            {ricercaBtn('backtest', 'Regola tecnica')}
+            {ricercaBtn('calibrazione', 'Fattore (IC)')}
+            {ricercaBtn('esperimento', 'Evento')}
+            {ricercaBtn('episodi', 'Episodio')}
           </nav>
           {ricercaTab === 'backtest' && <Backtest />}
-          {ricercaTab === 'calibrazione' && (
-            <>
-              <p className="muted small">La ricalibrazione qui aggiorna i pesi della lancetta di confluenza usata in <strong>Asset</strong> (peso ∝ IC out-of-sample dei soli fattori significativi).</p>
-              <Calibration />
-            </>
-          )}
+          {ricercaTab === 'calibrazione' && <Calibration />}
           {ricercaTab === 'esperimento' && (
             <ExperimentResults refreshKey={refreshKey} nowMs={nowMs} />
           )}

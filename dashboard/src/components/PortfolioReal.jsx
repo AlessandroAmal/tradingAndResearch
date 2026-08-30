@@ -4,6 +4,7 @@ import { resolveIsin, saveHolding, deleteHoldingApi, editHolding, checkPlausibil
 import { valueRow, byCategory, rateAtDate } from '../lib/portfolio'
 import { themeConcentration, themesBySymbol } from '../lib/concentration'
 import { fmtNum, fmtPct } from '../lib/format'
+import PositionsTable from './PositionsTable'
 
 const EUR_PAIRS = { USD: 'EURUSD=X', GBP: 'EURGBP=X', CHF: 'EURCHF=X', DKK: 'EURDKK=X', JPY: 'EURJPY=X', HKD: 'EURHKD=X' }
 const BASE = 'EUR'
@@ -15,7 +16,11 @@ const eur0 = (v) => (v == null ? 'n/d' : `€${fmtNum(v, 0)}`)
 // categories, manual-valued items (icon, no price feed), closed history, a
 // mortgage as a negative liability, and "Portafogli Figli" as a distinct
 // sub-portfolio. READ-ONLY: nothing here places an order.
-export default function PortfolioReal({ instruments = [], priceBySymbol = {}, onOpenAsset }) {
+export default function PortfolioReal({ instruments = [], priceBySymbol = {}, onOpenAsset,
+                                       positions = [], multiplierBySymbol = {}, settings = null, nowMs = Date.now() }) {
+  // Single portfolio view with a long-book vs trade filter (§6.A #3): the long
+  // book (holdings) is the structural portfolio; trades are the tactical ≤3wk book.
+  const [view, setView] = useState('long')   // long | trade | all
   const [holdings, setHoldings] = useState([])
   const [fxSeries, setFxSeries] = useState({})
   const [loading, setLoading] = useState(true)
@@ -65,6 +70,10 @@ export default function PortfolioReal({ instruments = [], priceBySymbol = {}, on
 
   const grouped = useMemo(() => byCategory(valued, { subPortfolioNames: [SUB] }), [valued])
   const closed = useMemo(() => valued.filter((v) => v.closed), [valued])
+  // Thematic concentration computed ONCE, on ONE base (§6.A #3): the EUR VALUE of
+  // the real long-book holdings. This is the correct base — it's the money you
+  // actually hold exposed to a theme — vs the old trade-book base (size×prezzo×
+  // point-value) which mixed native currencies and double-counted transient trades.
   const concentration = useMemo(() => {
     const bySym = themesBySymbol(instruments)
     const pos = valued.filter((v) => !v.closed && !v.manual && v.valueEur != null)
@@ -73,16 +82,33 @@ export default function PortfolioReal({ instruments = [], priceBySymbol = {}, on
   }, [valued, instruments])
 
   const [editId, setEditId] = useState(null)   // holding id being edited (shared)
+  const showLong = view !== 'trade'
+  const showTrade = view !== 'long'
+  const btn = (k, label) => (
+    <button key={k} className={`nav-btn ${view === k ? 'active' : ''}`} onClick={() => setView(k)}>{label}</button>
+  )
 
   return (
     <div className="desk">
-      <PatrimonySummary grouped={grouped} concentration={concentration} loading={loading} />
-      <PlausibilityPanel onEdit={setEditId} onChanged={load} />
-      {Object.values(grouped.cats).sort((a, b) => (a.isSub - b.isSub) || (b.valueEur - a.valueEur)).map((c) => (
+      <nav className="nav subnav" aria-label="Vista portafoglio">
+        {btn('long', 'Long book (holdings)')}{btn('trade', 'Trade (≤3 sett.)')}{btn('all', 'Tutto')}
+      </nav>
+      {showLong && <PatrimonySummary grouped={grouped} concentration={concentration} loading={loading} />}
+      {showLong && <PlausibilityPanel onEdit={setEditId} onChanged={load} />}
+      {showLong && Object.values(grouped.cats).sort((a, b) => (a.isSub - b.isSub) || (b.valueEur - a.valueEur)).map((c) => (
         <CategoryTable key={c.category} cat={c} editId={editId} setEditId={setEditId} onOpenAsset={onOpenAsset} onChanged={load} />
       ))}
-      {closed.length > 0 && <ClosedSection rows={closed} />}
-      <HoldingForm instruments={instruments} onSaved={load} />
+      {showLong && closed.length > 0 && <ClosedSection rows={closed} />}
+      {showTrade && (
+        <section className="panel">
+          <header className="panel-head">
+            <h2>Posizioni di trading (reali, ≤3 settimane)</h2>
+            <span className="muted small">heat, stop, R · il libro tattico, distinto dal long book</span>
+          </header>
+          <PositionsTable positions={positions} priceBySymbol={priceBySymbol} multiplierBySymbol={multiplierBySymbol} settings={settings} nowMs={nowMs} />
+        </section>
+      )}
+      {showLong && <HoldingForm instruments={instruments} onSaved={load} />}
     </div>
   )
 }
