@@ -87,6 +87,14 @@ export function deleteHoldingApi(symbol) {
 export function editHolding(payload) {
   return post('/portfolio/holding/edit', payload)
 }
+// Plausibility check: declared cost vs market price on the buy date (historical).
+export function checkPlausibility() {
+  return post('/portfolio/plausibility')
+}
+// Bulk-clear the review flag (mark holdings as verified).
+export function verifyHoldings(ids) {
+  return post('/portfolio/holdings/verify', { ids })
+}
 
 // PAID: read the tone from a user-provided earnings-call transcript (one Haiku
 // call). Use when the IR transcript can't be fetched automatically.

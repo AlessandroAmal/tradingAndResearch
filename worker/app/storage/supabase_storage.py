@@ -127,6 +127,18 @@ class SupabaseStorage:
         res = self._client.table("holdings").delete().eq("source", source).execute()
         return len(res.data or [])
 
+    def verify_holdings_by_ids(self, ids: list[str]) -> int:
+        """Clear the review flag on several holdings at once (bulk "verificato")."""
+        if not ids:
+            return 0
+        try:
+            res = (self._client.table("holdings").update({"needs_review": False, "updated_at": "now()"})
+                   .in_("id", ids).execute())
+            return len(res.data or [])
+        except Exception as exc:  # noqa: BLE001 — pre-0026
+            log.warning("bulk verify failed (apply 0026?): %s", exc)
+            return 0
+
     def delete_all_holdings(self) -> int:
         # Full reset for a real-portfolio CSV import (config placeholders re-seed).
         res = self._client.table("holdings").delete().neq("symbol", "\x00").execute()

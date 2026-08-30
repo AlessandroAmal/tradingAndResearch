@@ -47,6 +47,10 @@ class Storage(Protocol):
         """Remove a holding by symbol (user-confirmed in the UI)."""
         ...
 
+    def verify_holdings_by_ids(self, ids: list[str]) -> int:
+        """Clear needs_review on several holdings at once (bulk 'verificato')."""
+        ...
+
     # --- ISIN → ticker map (real portfolio) -----------------------
     def upsert_isin_map(self, row: dict[str, Any]) -> dict[str, Any]:
         """Persist a confirmed ISIN↔ticker mapping (by isin, else by ticker)."""

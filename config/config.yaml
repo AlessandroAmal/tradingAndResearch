@@ -201,6 +201,7 @@ holdings:
 # (never an estimate). EUR needs no pair (rate = 1).
 portfolio:
   base_currency: EUR
+  plausibility_threshold: 0.15   # carico entro ±15% del prezzo di mercato alla data = plausibile
   eur_pairs:
     USD: "EURUSD=X"
     GBP: "EURGBP=X"

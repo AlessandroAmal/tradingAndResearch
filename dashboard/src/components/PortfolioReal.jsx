@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchHoldings, fetchPrices } from '../api/data'
-import { resolveIsin, saveHolding, deleteHoldingApi, editHolding, apiConfigured } from '../api/control'
+import { resolveIsin, saveHolding, deleteHoldingApi, editHolding, checkPlausibility, verifyHoldings, apiConfigured } from '../api/control'
 import { valueRow, byCategory, rateAtDate } from '../lib/portfolio'
 import { themeConcentration, themesBySymbol } from '../lib/concentration'
 import { fmtNum, fmtPct } from '../lib/format'
@@ -72,15 +72,92 @@ export default function PortfolioReal({ instruments = [], priceBySymbol = {}, on
     return themeConcentration(pos, bySym).filter((t) => t.concentrated)
   }, [valued, instruments])
 
+  const [editId, setEditId] = useState(null)   // holding id being edited (shared)
+
   return (
     <div className="desk">
       <PatrimonySummary grouped={grouped} concentration={concentration} loading={loading} />
+      <PlausibilityPanel onEdit={setEditId} onChanged={load} />
       {Object.values(grouped.cats).sort((a, b) => (a.isSub - b.isSub) || (b.valueEur - a.valueEur)).map((c) => (
-        <CategoryTable key={c.category} cat={c} onOpenAsset={onOpenAsset} onChanged={load} />
+        <CategoryTable key={c.category} cat={c} editId={editId} setEditId={setEditId} onOpenAsset={onOpenAsset} onChanged={load} />
       ))}
       {closed.length > 0 && <ClosedSection rows={closed} />}
       <HoldingForm instruments={instruments} onSaved={load} />
     </div>
+  )
+}
+
+// Plausibility of the declared cost vs the market price on the buy date.
+function PlausibilityPanel({ onEdit, onChanged }) {
+  const [res, setRes] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const run = async () => {
+    setBusy(true); setErr(null)
+    const { data, error } = await checkPlausibility()
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setRes(data)
+  }
+  const verify = async (ids) => {
+    if (!ids.length) return
+    setBusy(true); await verifyHoldings(ids); setBusy(false)
+    onChanged?.(); run()
+  }
+  if (!apiConfigured) return null
+  const results = res?.results || []
+  const suspects = results.filter((r) => r.status === 'sospetta')
+  const unver = results.filter((r) => r.status === 'non_verificabile')
+  const plausToVerify = results.filter((r) => r.status === 'plausibile' && r.needs_review)
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Controllo di plausibilità del carico</h2>
+        <span className="muted small">carico dichiarato vs prezzo di mercato alla data d'acquisto</span>
+      </header>
+      {!res ? (
+        <button className="ghost small" disabled={busy} onClick={run}>{busy ? 'Controllo… (può richiedere ~1 min)' : '🔍 Controlla plausibilità'}</button>
+      ) : (
+        <>
+          <div className="stat-grid">
+            <div className="stat"><span className="stat-label">Plausibili (±{Math.round(res.threshold * 100)}%)</span><span className="stat-value pos">{res.summary.plausibile}</span></div>
+            <div className="stat"><span className="stat-label">Sospette</span><span className="stat-value neg">{res.summary.sospetta}</span></div>
+            <div className="stat"><span className="stat-label">Non verificabili</span><span className="stat-value muted">{res.summary.non_verificabile}</span></div>
+          </div>
+          {plausToVerify.length > 0 && (
+            <div className="form-actions">
+              <button className="primary" disabled={busy} onClick={() => verify(plausToVerify.map((r) => r.id))}>✓ Segna le {plausToVerify.length} plausibili (ancora da verificare) come Verificato</button>
+            </div>
+          )}
+          {suspects.length > 0 && (
+            <div className="risk-table-wrap">
+              <table className="risk-table">
+                <thead><tr><th>Strumento</th><th>Data</th><th>Carico dich.</th><th>Mercato quel giorno</th><th>Scarto</th><th></th></tr></thead>
+                <tbody>
+                  {suspects.map((r) => (
+                    <tr key={r.id} className="review-row">
+                      <td>{r.name || r.symbol}<br /><span className="muted small">{r.symbol}</span></td>
+                      <td className="muted small">{r.buy_date}</td>
+                      <td>€{fmtNum(r.declared_eur, 2)}</td>
+                      <td>€{fmtNum(r.market_eur, 2)}</td>
+                      <td className="neg">{fmtPct(r.deviation_pct * 100)}</td>
+                      <td><span className="flags">
+                        <button className="flag-badge" disabled={busy} onClick={() => verify([r.id])}>conferma comunque</button>
+                        <button className="flag-badge" onClick={() => onEdit?.(r.id)}>modifica</button>
+                      </span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {unver.length > 0 && <p className="muted small">Non verificabili ({unver.length}): {unver.map((r) => `${r.symbol} — ${r.reason}`).join(' · ')}</p>}
+          <button className="ghost small" disabled={busy} onClick={run}>{busy ? '…' : '↻ Ricontrolla'}</button>
+        </>
+      )}
+      {err && <p className="error">{err}</p>}
+      <p className="muted small caveat">Controllo di plausibilità contro il prezzo di mercato alla data dichiarata — non sostituisce l'estratto conto; carichi medi da più tranche possono divergere legittimamente.</p>
+    </section>
   )
 }
 
@@ -117,9 +194,9 @@ function PatrimonySummary({ grouped, concentration, loading }) {
   )
 }
 
-function CategoryTable({ cat, onOpenAsset, onChanged }) {
+function CategoryTable({ cat, editId, setEditId, onOpenAsset, onChanged }) {
   const [confirmDel, setConfirmDel] = useState(null)
-  const [editing, setEditing] = useState(null)   // holding id being edited
+  const editing = editId; const setEditing = setEditId   // shared with the plausibility panel
   const [busy, setBusy] = useState(false)
   const del = async (symbol) => { setBusy(true); await deleteHoldingApi(symbol); setBusy(false); setConfirmDel(null); onChanged?.() }
   const rows = cat.rows.filter((r) => !r.closed)

@@ -204,6 +204,10 @@ class DeleteHoldingRequest(BaseModel):
     symbol: str
 
 
+class VerifyHoldingsRequest(BaseModel):
+    ids: list[str]
+
+
 class TranscriptRequest(BaseModel):
     symbol: str
     text: str
@@ -368,6 +372,21 @@ def portfolio_holding(body: HoldingRequest) -> dict[str, Any]:
 def portfolio_holding_delete(body: DeleteHoldingRequest) -> dict[str, Any]:
     _storage().delete_holding(body.symbol)
     return {"deleted": body.symbol}
+
+
+@app.post("/portfolio/plausibility", dependencies=[Depends(require_token)])
+def portfolio_plausibility() -> dict[str, Any]:
+    """Sanity-check each imported holding's declared cost against the market price
+    on its buy date (historical close → EUR). No estimate: missing → non verificabile."""
+    from .portfolio_plausibility import check_holdings
+    cfg, storage = _cfg(), _storage()
+    price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    return check_holdings(cfg, storage, price_provider)
+
+
+@app.post("/portfolio/holdings/verify", dependencies=[Depends(require_token)])
+def portfolio_holdings_verify(body: VerifyHoldingsRequest) -> dict[str, Any]:
+    return {"verified": _storage().verify_holdings_by_ids(body.ids)}
 
 
 @app.post("/fundamentals/transcript", dependencies=[Depends(require_token)])
