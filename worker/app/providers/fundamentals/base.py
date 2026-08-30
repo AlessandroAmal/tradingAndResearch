@@ -19,3 +19,10 @@ class FundamentalsProvider(Protocol):
         quality, cash, earnings, analysts). Values are None when unavailable.
         Must not raise on missing data; raise only on a hard fetch failure."""
         ...
+
+    def fetch_quarterly(self, symbol: str) -> list[dict[str, Any]]:
+        """Return the available quarterly statements (~4-5 from yfinance) as a list
+        of per-quarter records, newest first: {period_end, period_label, revenue,
+        net_income, gross_margin, operating_margin, net_margin, operating_cash_flow,
+        capex, fcf, cash, debt, eps}. Missing fields are None; degrades to []."""
+        ...

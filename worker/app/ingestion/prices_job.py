@@ -32,6 +32,9 @@ def run_prices_ingestion(
                 lambda s=symbol: provider.fetch_history(s, days),
                 label=f"fetch_history({symbol})",
             )
+            # Skip bars with no close — a partial current-day bar (pre-market /
+            # not-yet-finalised) would otherwise become the newest row with a null
+            # close and read as "n/d" for a liquid instrument.
             rows = [
                 {
                     "instrument_id": iid,
@@ -44,6 +47,7 @@ def run_prices_ingestion(
                     "source": b.source,
                 }
                 for b in bars
+                if b.close is not None
             ]
             storage.upsert_prices(rows)
             ok += 1

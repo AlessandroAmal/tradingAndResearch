@@ -93,6 +93,183 @@ class SupabaseStorage:
             return
         self._client.table("holdings").update(safe).eq("symbol", symbol).execute()
 
+    def upsert_holding(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert or update a real holding by symbol (app-level upsert: the table
+        has no unique(symbol) constraint, so we branch on existence)."""
+        symbol = row.get("symbol")
+        existing = (
+            self._client.table("holdings").select("id").eq("symbol", symbol).limit(1)
+            .execute().data or []
+        )
+        payload = {k: v for k, v in row.items() if k != "id"}
+        payload["updated_at"] = "now()"
+        if existing:
+            res = self._insert_resilient_update("holdings", payload, "symbol", symbol)
+            return res
+        return self._insert_resilient("holdings", payload)
+
+    def delete_holding(self, symbol: str) -> None:
+        self._client.table("holdings").delete().eq("symbol", symbol).execute()
+
+    def insert_holding_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert ONE holding row (import path: multiple rows per symbol allowed —
+        different categories/tranches — so never an upsert-by-symbol)."""
+        return self._insert_resilient("holdings", {k: v for k, v in row.items() if k != "id"})
+
+    def update_holding_by_id(self, holding_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+        """Update ONE holding row by id (edit path — the row is the identity, since
+        several rows can share a symbol). Drops unknown columns resiliently."""
+        payload = {k: v for k, v in fields.items() if k != "id"}
+        payload["updated_at"] = "now()"
+        return self._insert_resilient_update("holdings", payload, "id", holding_id)
+
+    def delete_holdings_by_source(self, source: str) -> int:
+        res = self._client.table("holdings").delete().eq("source", source).execute()
+        return len(res.data or [])
+
+    def delete_all_holdings(self) -> int:
+        # Full reset for a real-portfolio CSV import (config placeholders re-seed).
+        res = self._client.table("holdings").delete().neq("symbol", "\x00").execute()
+        return len(res.data or [])
+
+    # --- ISIN → ticker map ----------------------------------------
+    def upsert_isin_map(self, row: dict[str, Any]) -> dict[str, Any]:
+        isin = row.get("isin")
+        payload = {k: v for k, v in row.items() if k != "id"}
+        payload["updated_at"] = "now()"
+        q = self._client.table("isin_map").select("id")
+        existing = (
+            (q.eq("isin", isin).limit(1).execute().data or []) if isin
+            else (q.eq("ticker", row.get("ticker")).limit(1).execute().data or [])
+        )
+        if existing:
+            (self._client.table("isin_map").update(payload)
+             .eq("id", existing[0]["id"]).execute())
+            return {**payload, "id": existing[0]["id"]}
+        res = self._client.table("isin_map").insert(payload).execute()
+        return res.data[0] if res.data else {}
+
+    def get_isin_map(self, isin: str) -> dict[str, Any] | None:
+        try:
+            res = (self._client.table("isin_map").select("*").eq("isin", isin)
+                   .limit(1).execute())
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001 — pre-0023: degrade, resolve falls back
+            log.warning("isin_map read failed (apply migration 0023?): %s", exc)
+            return None
+
+    def find_isin_by_ticker(self, ticker: str) -> dict[str, Any] | None:
+        try:
+            res = (self._client.table("isin_map").select("*").ilike("ticker", ticker)
+                   .limit(1).execute())
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("isin_map read failed (apply migration 0023?): %s", exc)
+            return None
+
+    def list_isin_map(self) -> list[dict[str, Any]]:
+        try:
+            return self._client.table("isin_map").select("*").execute().data or []
+        except Exception as exc:  # noqa: BLE001
+            log.warning("isin_map read failed (apply migration 0023?): %s", exc)
+            return []
+
+    def _insert_resilient_update(self, table: str, payload: dict[str, Any],
+                                 key: str, val: Any) -> dict[str, Any]:
+        """Like _insert_resilient but for UPDATE-by-key (drops unknown columns)."""
+        p = dict(payload)
+        for _ in range(len(p) + 1):
+            try:
+                res = self._client.table(table).update(p).eq(key, val).execute()
+                return res.data[0] if res.data else {}
+            except Exception as exc:  # noqa: BLE001
+                m = _MISSING_COL_RE.search(str(exc))
+                if not m or m.group(1) not in p:
+                    raise
+                log.warning("%s: column '%s' missing — updating without it", table, m.group(1))
+                p.pop(m.group(1), None)
+        raise RuntimeError(f"{table}: could not update after dropping unknown columns")
+
+    # --- fundamentals history + valuation + tone -----------------
+    def upsert_fundamentals_history(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        try:
+            self._client.table("fundamentals_history").upsert(
+                rows, on_conflict="symbol,period_end").execute()
+        except Exception as exc:  # noqa: BLE001 — pre-0027; degrade
+            log.warning("fundamentals_history upsert failed (apply 0027?): %s", exc)
+
+    def get_fundamentals_history(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        try:
+            return (self._client.table("fundamentals_history").select("*")
+                    .eq("symbol", symbol).order("period_end", desc=True)
+                    .limit(limit).execute().data or [])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("fundamentals_history read failed: %s", exc)
+            return []
+
+    def upsert_valuation_snapshot(self, row: dict[str, Any]) -> None:
+        try:
+            self._client.table("valuation_snapshots").upsert(
+                row, on_conflict="symbol,as_of_date").execute()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("valuation_snapshots upsert failed (apply 0027?): %s", exc)
+
+    def get_valuation_history(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        try:
+            return (self._client.table("valuation_snapshots").select("*")
+                    .eq("symbol", symbol).order("as_of_date", desc=True)
+                    .limit(limit).execute().data or [])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("valuation_snapshots read failed: %s", exc)
+            return []
+
+    def upsert_tone_reading(self, row: dict[str, Any]) -> dict[str, Any]:
+        try:
+            res = self._client.table("tone_readings").upsert(
+                row, on_conflict="symbol,period_end").execute()
+            return res.data[0] if res.data else {}
+        except Exception as exc:  # noqa: BLE001 — pre-0028
+            log.warning("tone_readings upsert failed (apply 0028?): %s", exc)
+            return {}
+
+    def get_tone_readings(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        try:
+            return (self._client.table("tone_readings").select("*")
+                    .eq("symbol", symbol).order("period_end", desc=True)
+                    .limit(limit).execute().data or [])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("tone_readings read failed: %s", exc)
+            return []
+
+    def get_tone_reading(self, symbol: str, period_end: str) -> dict[str, Any] | None:
+        try:
+            res = (self._client.table("tone_readings").select("*")
+                   .eq("symbol", symbol).eq("period_end", period_end).limit(1).execute())
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("tone_reading read failed: %s", exc)
+            return None
+
+    def upsert_transcript(self, row: dict[str, Any]) -> dict[str, Any]:
+        try:
+            res = self._client.table("transcripts").upsert(
+                row, on_conflict="symbol,period_end").execute()
+            return res.data[0] if res.data else {}
+        except Exception as exc:  # noqa: BLE001 — pre-0029
+            log.warning("transcripts upsert failed (apply 0029?): %s", exc)
+            return {}
+
+    def get_transcript(self, symbol: str, period_end: str) -> dict[str, Any] | None:
+        try:
+            res = (self._client.table("transcripts").select("*")
+                   .eq("symbol", symbol).eq("period_end", period_end).limit(1).execute())
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("transcript read failed: %s", exc)
+            return None
+
     # --- prices ---------------------------------------------------
     def upsert_prices(self, rows: list[dict[str, Any]]) -> None:
         if not rows:

@@ -546,6 +546,7 @@ def run_decision_board(
             # Single-stock: company fundamentals + fresh per-stock news (context).
             fundamentals = None
             stock_news_items = None
+            tone = None
             if inst.get("fundamentals"):
                 try:
                     from ..providers.fundamentals import build_fundamentals_provider
@@ -557,6 +558,29 @@ def run_decision_board(
                     stock_news_items = recent_news(inst.get("name", symbol), symbol)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("Stock news failed for %s: %s", symbol, exc)
+                # Accumulated quarterly TRAJECTORY (QoQ/YoY + inflections) and the
+                # valuation "vs its own history" percentile — context, already priced.
+                try:
+                    from ..fundamentals_trajectory import compute_trajectory, own_percentile
+                    hist = storage.get_fundamentals_history(symbol, 12)
+                    if hist and fundamentals is not None:
+                        fundamentals["history"] = compute_trajectory(hist)
+                    vsnaps = storage.get_valuation_history(symbol, 400)
+                    if fundamentals is not None and vsnaps:
+                        ctx = fundamentals.get("valuation", {}).get("context", {}) or {}
+                        pe = ctx.get("pe")
+                        basis = ctx.get("basis")
+                        key = "pe_forward" if basis == "forward" else "pe_trailing"
+                        own = own_percentile([v.get(key) for v in vsnaps], pe)
+                        ctx["own_history"] = own
+                        fundamentals.setdefault("valuation", {})["context"] = ctx
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Trajectory/valuation history failed for %s: %s", symbol, exc)
+                # Communications tone (latest quarters), if read.
+                try:
+                    tone = storage.get_tone_readings(symbol, 2) or None
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Tone read failed for %s: %s", symbol, exc)
 
             # Synthesis (confluence read) — transparent lean + market divergence.
             # Evidence-based recomposition: calibrated weights override the config
@@ -674,6 +698,7 @@ def run_decision_board(
                 "synthesis": synthesis,
                 "fx_signals": fx,
                 "fundamentals": fundamentals,
+                "tone": tone,
                 "news": stock_news_items,
                 "full_picture": full_picture,
                 # Dual lens (single stocks): the SAME board reads differently as a

@@ -113,6 +113,21 @@ def _cmd_impact(cfg, storage) -> int:
     return 0 if res["failed"] == 0 else 1
 
 
+def _cmd_fundamentals(cfg, storage) -> int:
+    from .ingestion.fundamentals_job import run_fundamentals_ingestion
+    from .providers.fundamentals import build_fundamentals_provider
+    fp = build_fundamentals_provider(cfg.providers.get("fundamentals", "yfinance"))
+    tone = None
+    if cfg.ai_enabled:
+        try:
+            from .providers.tone import build_tone_provider
+            tone = build_tone_provider("haiku", build_ai_client(), cfg.tone_model)
+        except Exception as exc:  # noqa: BLE001 — tone optional
+            log.warning("Tone provider off: %s", exc)
+    res = run_fundamentals_ingestion(cfg, storage, fp, tone)
+    return 0 if res["failed"] == 0 else 1
+
+
 def _cmd_risk(cfg, storage) -> int:
     build_risk_report(cfg, storage)  # logs the report + breach flags
     return 0
@@ -281,6 +296,7 @@ COMMANDS = {
     "briefing-intraday": _cmd_briefing_intraday,
     "figures": _cmd_figures,
     "impact": _cmd_impact,
+    "fundamentals": _cmd_fundamentals,
     "risk": _cmd_risk,
     "journal-review": _cmd_journal_review,
     "options": _cmd_options,

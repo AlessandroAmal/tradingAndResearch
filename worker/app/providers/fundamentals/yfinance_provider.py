@@ -107,6 +107,92 @@ def valuation_context(pe_forward: float | None, pe_trailing: float | None,
                      "contesto, non una previsione.")}
 
 
+# yfinance line-item names drift; try several. All CONTEXT — already priced.
+_REVENUE = ("Total Revenue", "TotalRevenue", "Operating Revenue")
+_NET_INCOME = ("Net Income", "Net Income Common Stockholders", "NetIncome")
+_GROSS = ("Gross Profit",)
+_OPINCOME = ("Operating Income", "Operating Income Or Loss", "Total Operating Income As Reported")
+_EPS = ("Diluted EPS", "Basic EPS")
+_DEBT = ("Total Debt",)
+_LTDEBT = ("Long Term Debt",)
+_CURDEBT = ("Current Debt", "Current Debt And Capital Lease Obligation")
+_CASH = ("Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments",
+         "Cash Financial")
+_OCF = ("Operating Cash Flow", "Cash Flow From Continuing Operating Activities")
+_CAPEX = ("Capital Expenditure", "Capital Expenditures", "Purchase Of PPE")
+_FCF = ("Free Cash Flow",)
+
+
+def _pick(period: dict, keys) -> float | None:
+    for k in keys:
+        if k in period:
+            v = _num(period[k])
+            if v is not None:
+                return v
+    return None
+
+
+def _margin(part: float | None, whole: float | None) -> float | None:
+    if part is None or whole is None or whole == 0:
+        return None
+    return part / whole
+
+
+def parse_quarterly(income: dict, balance: dict, cashflow: dict) -> list[dict]:
+    """Pure: build per-quarter records from statement dicts keyed by period-end ISO
+    date -> {line_item: value}. Newest first. Margins/FCF derived; missing -> None.
+    Kept pure so it is unit-tested without any network."""
+    periods = sorted(set(income) | set(balance) | set(cashflow), reverse=True)
+    out: list[dict] = []
+    for p in periods:
+        inc, bal, cf = income.get(p, {}), balance.get(p, {}), cashflow.get(p, {})
+        revenue = _pick(inc, _REVENUE)
+        net_income = _pick(inc, _NET_INCOME)
+        gross = _pick(inc, _GROSS)
+        op_income = _pick(inc, _OPINCOME)
+        ocf = _pick(cf, _OCF)
+        capex = _pick(cf, _CAPEX)
+        fcf = _pick(cf, _FCF)
+        if fcf is None and ocf is not None and capex is not None:
+            fcf = ocf + capex                      # capex is negative in yfinance
+        debt = _pick(bal, _DEBT)
+        if debt is None:
+            lt, cur = _pick(bal, _LTDEBT), _pick(bal, _CURDEBT)
+            debt = (lt or 0) + (cur or 0) if (lt is not None or cur is not None) else None
+        out.append({
+            "period_end": p[:10],
+            "period_label": _quarter_label(p),
+            "revenue": revenue, "net_income": net_income,
+            "gross_margin": _margin(gross, revenue),
+            "operating_margin": _margin(op_income, revenue),
+            "net_margin": _margin(net_income, revenue),
+            "operating_cash_flow": ocf, "capex": capex, "fcf": fcf,
+            "cash": _pick(bal, _CASH), "debt": debt, "eps": _pick(inc, _EPS),
+        })
+    return out
+
+
+def _quarter_label(iso: str) -> str:
+    try:
+        d = date.fromisoformat(iso[:10])
+        return f"{d.year}-Q{(d.month - 1) // 3 + 1}"
+    except (TypeError, ValueError):
+        return str(iso)[:10]
+
+
+def _df_to_periods(df) -> dict:
+    """A yfinance statement DataFrame (rows=line items, cols=period-end) -> a dict
+    {period_iso: {line_item: value}}."""
+    out: dict[str, dict] = {}
+    if df is None or getattr(df, "empty", True):
+        return out
+    for col in df.columns:
+        key = col.date().isoformat() if hasattr(col, "date") else str(col)[:10]
+        series = df[col]
+        out[key] = {str(idx): series[idx] for idx in df.index}
+    return out
+
+
 def _pe_history(symbol: str) -> list[float]:
     """Reconstruct a rough P/E series = monthly price ÷ trailing-12m EPS, using
     past reported quarterly EPS. Honest (real data) but coarse; degrades to []."""
@@ -214,3 +300,17 @@ class YFinanceFundamentalsProvider(FundamentalsProvider):
         except Exception:  # noqa: BLE001
             pass
         return data
+
+    def fetch_quarterly(self, symbol: str) -> list[dict[str, Any]]:
+        """~4-5 quarters of income/balance/cashflow, mapped to our records."""
+        try:
+            import yfinance as yf
+
+            t = yf.Ticker(symbol)
+            inc = _df_to_periods(getattr(t, "quarterly_income_stmt", None))
+            bal = _df_to_periods(getattr(t, "quarterly_balance_sheet", None))
+            cf = _df_to_periods(getattr(t, "quarterly_cashflow", None))
+        except Exception as exc:  # noqa: BLE001 — degrade to empty
+            log.warning("quarterly statements %s failed: %s", symbol, exc)
+            return []
+        return parse_quarterly(inc, bal, cf)

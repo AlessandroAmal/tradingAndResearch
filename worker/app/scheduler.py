@@ -139,6 +139,26 @@ def build_scheduler(cfg: AppConfig, storage: Storage) -> BlockingScheduler:
         except Exception as exc:  # noqa: BLE001 — missing key etc.
             log.warning("AI layer not started (tagging/briefings disabled): %s", exc)
 
+    # --- fundamentals history + tone (weekly; history runs w/o AI, tone needs AI) ---
+    from .ingestion.fundamentals_job import run_fundamentals_ingestion
+    from .providers.fundamentals import build_fundamentals_provider
+    _fundamentals_provider = build_fundamentals_provider(cfg.providers.get("fundamentals", "yfinance"))
+    _tone_provider = None
+    if ai is not None:
+        from .providers.tone import build_tone_provider
+        _tone_provider = build_tone_provider("haiku", ai, cfg.tone_model)
+
+    def _fundamentals() -> None:
+        try:
+            run_fundamentals_ingestion(cfg, storage, _fundamentals_provider, _tone_provider)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Fundamentals job crashed: %s", exc)
+
+    sched.add_job(
+        _fundamentals, CronTrigger.from_crontab(cfg.fundamentals_cron),
+        id="fundamentals_ingestion", max_instances=1, coalesce=True,
+    )
+
     if ai is not None:
         def _tagging() -> None:
             try:

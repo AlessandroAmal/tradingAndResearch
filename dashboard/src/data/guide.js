@@ -117,6 +117,8 @@ export const FULLPIC_HELP = [
   { key: 'macro', label: 'Contesto macro (sfondo)', text: 'Il lean dei SOLI driver macro (tassi, VIX) per il titolo. Per un’azione è sfondo: conta più l’azienda e la notizia.' },
   { key: 'technical', label: 'Contesto tecnico (sfondo)', text: 'Posizione rispetto alle medie mobili, RSI e streak. Contesto debole: un movimento esteso spesso CONTINUA, non si inverte.' },
   { key: 'skew', label: 'Skew (opzioni)', text: 'Skew / risk reversal delle opzioni: confronta il costo (volatilità implicita) delle PUT contro le CALL sullo stesso titolo. Put più care = bias ribassista (dove si concentrano coperture e flussi); call più care = bias rialzista. Indica DOVE si posiziona il mercato delle opzioni, NON è una previsione; se la smile è rada è poco affidabile e non pesa nel lean.' },
+  { key: 'traiettoria', label: 'Traiettoria dei bilanci', text: 'Storico trimestrale di ricavi, utili, margini, free cash flow, cassa e debito: valore attuale + variazione vs trimestre prima (QoQ) e vs stesso trimestre anno prima (YoY), con sparkline. Le “inflessioni” (un margine che gira, il FCF che cambia segno, il debito che accelera) sono da leggere. È contesto, già noto al mercato — NON una previsione.' },
+  { key: 'tono', label: 'Tono delle comunicazioni', text: 'Lettura QUALITATIVA del linguaggio delle comunicazioni del trimestre (guidance alzata/abbassata, cautela vs fiducia, temi nuovi/spariti) e cosa è cambiato vs il trimestre prima. Se non c’è testo accessibile a sufficienza → “non valutabile”, mai inventato. NON assume l’impatto sul titolo: verrà misurato come fattore candidato nella calibrazione quando lo storico basterà.' },
 ]
 export const FULLPIC_HELP_BY_KEY = byKey(FULLPIC_HELP)
 

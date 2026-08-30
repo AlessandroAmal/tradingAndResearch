@@ -122,6 +122,23 @@ def seed_universe_and_holdings(cfg: AppConfig, storage: Storage) -> None:
                 }
             )
     storage.insert_holdings(to_insert)
+
+    # Preload the ISIN→ticker map for known instruments (ticker-only entries, so a
+    # ticker the user types is recognised with its name/currency; the ISIN is
+    # filled the first time they confirm one). Best-effort — needs migration 0023.
+    try:
+        known = {str(r.get("ticker", "")).upper() for r in storage.list_isin_map()}
+        for i in cfg.universe:
+            if i.symbol.upper() in known:
+                continue
+            storage.upsert_isin_map({
+                "isin": None, "ticker": i.symbol, "name": i.name,
+                "currency": (i.currency or "USD"), "exchange": i.exchange,
+                "source": "seed", "verified": False,
+            })
+    except Exception as exc:  # noqa: BLE001 — pre-0023; portfolio not yet migrated
+        log.warning("Could not preload isin_map (apply migration 0023?): %s", exc)
+
     log.info(
         "Seed complete: %d instruments, %d holdings (%d new, %d preserved)",
         len(instruments), len(cfg.holdings), len(to_insert), updated,

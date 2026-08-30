@@ -70,6 +70,30 @@ export function calibrateProspects() {
   return post('/prospects/calibrate')
 }
 
+// Real portfolio (holdings by ISIN). Resolution + save go through the worker so
+// the instrument, its prices and the EUR/<ccy> FX pair are bootstrapped server-
+// side; no order is ever placed. Delete removes the holding row.
+export function resolveIsin(query) {
+  return post('/isin/resolve', { query })
+}
+export function saveHolding(payload) {
+  return post('/portfolio/holding', payload)
+}
+export function deleteHoldingApi(symbol) {
+  return post('/portfolio/holding/delete', { symbol })
+}
+// Edit one holding by id (quantity/carico/valuta/data/nota/verificato + optional
+// corrected ticker). A ticker change re-resolves + re-prices + updates isin_map.
+export function editHolding(payload) {
+  return post('/portfolio/holding/edit', payload)
+}
+
+// PAID: read the tone from a user-provided earnings-call transcript (one Haiku
+// call). Use when the IR transcript can't be fetched automatically.
+export function submitTranscript(symbol, text, periodLabel) {
+  return post('/fundamentals/transcript', { symbol, text, period_label: periodLabel || null })
+}
+
 // Background-job status pollers (state: idle|running|done|error, elapsed_sec,
 // progress/total/step, result, error, duration_sec, stale).
 export function getCalibrateStatus() {

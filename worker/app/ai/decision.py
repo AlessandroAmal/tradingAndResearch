@@ -71,7 +71,14 @@ _SYSTEM = (
     "fondamentali sono già riflessi nel prezzo: contesto, non una previsione. "
     "Resta QUALITATIVO (convinzione alta/bassa), MAI un numero di probabilità "
     "direzionale tuo, MAI una raccomandazione operativa. "
-    "(7) BREVITÀ: 'read' al massimo ~150 parole; al massimo 4 voci per ciascuna "
+    "(7) Se ricevi la TRAIETTORIA dei bilanci (variazioni QoQ/YoY e INFLESSIONI: "
+    "un margine che gira, il FCF che cambia segno, il debito che accelera) e la "
+    "lettura del TONO delle comunicazioni (guidance alzata/abbassata, cautela vs "
+    "fiducia, temi nuovi/spariti), citali QUALITATIVAMENTE nella prosa come "
+    "contesto già noto al mercato. Il tono è una lettura del LINGUAGGIO: NON "
+    "assumere il suo impatto sul titolo e NON trarne un numero; se è 'non "
+    "valutabile', dillo. Nessun punteggio dal tono o dalla traiettoria. "
+    "(8) BREVITÀ: 'read' al massimo ~150 parole; al massimo 4 voci per ciascuna "
     "lista (upside_drivers, downside_drivers, watch_next_event), ognuna una riga. "
     "Niente preamboli."
 )
@@ -106,6 +113,12 @@ def summarize_decision_board(
     # "everything together" qualitatively (the one place fusion is honest).
     if board.get("fundamentals"):
         compact["company_fundamentals"] = board.get("fundamentals")
+        # the quarterly TRAJECTORY (QoQ/YoY + inflections) travels inside
+        # fundamentals["history"]; surface it explicitly for the model.
+        if board["fundamentals"].get("history"):
+            compact["fundamentals_trajectory"] = board["fundamentals"]["history"]
+    if board.get("tone"):
+        compact["communications_tone"] = board.get("tone")
     if board.get("news"):
         compact["fresh_news"] = board.get("news")
     user = ("DECISION BOARD (solo fatti; le probabilità qui sono REALI — "

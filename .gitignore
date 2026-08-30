@@ -47,3 +47,6 @@ Thumbs.db
 
 # Local service logs (launchd)
 logs/
+
+# Local scratch (personal data, e.g. portfolio CSV imports)
+temp/

@@ -91,6 +91,14 @@ universe:
     asset_class: fx
     sleeve: macro
     tradeable_on: "Fineco (CFD)"
+  # FX crosses for the REAL PORTFOLIO valuation (native→EUR). Not traded — quote =
+  # units of the foreign currency per 1 EUR (EURGBP=X → GBP per EUR, etc.). Ingested
+  # by the price job like any symbol; the portfolio converts native value / rate.
+  - { symbol: "EURGBP=X", name: "EUR/GBP", asset_class: fx, sleeve: gauge, traded: false, tradeable_on: "solo valorizzazione" }
+  - { symbol: "EURCHF=X", name: "EUR/CHF", asset_class: fx, sleeve: gauge, traded: false, tradeable_on: "solo valorizzazione" }
+  - { symbol: "EURDKK=X", name: "EUR/DKK", asset_class: fx, sleeve: gauge, traded: false, tradeable_on: "solo valorizzazione" }
+  - { symbol: "EURJPY=X", name: "EUR/JPY", asset_class: fx, sleeve: gauge, traded: false, tradeable_on: "solo valorizzazione" }
+  - { symbol: "EURHKD=X", name: "EUR/HKD", asset_class: fx, sleeve: gauge, traded: false, tradeable_on: "solo valorizzazione" }
   # Equities (CEO tracciati). `themes` = tag tematici per l'avviso di
   # concentrazione (posizioni sullo stesso tema sono correlate, non diversificate).
   - symbol: "NVDA"
@@ -187,6 +195,20 @@ holdings:
   - { symbol: "HG=F",    name: "Copper",           asset_class: commodity, quantity: 0, avg_price: null }
   - { symbol: "BTC-USD", name: "Bitcoin",          asset_class: crypto,    quantity: 0, avg_price: null }
 
+# --- Real portfolio (holdings) valuation ------------------------------
+# Base currency for portfolio totals, and the EUR/<ccy> yfinance pair used to
+# convert each native value to EUR. A currency with no pair here shows fx "n/d"
+# (never an estimate). EUR needs no pair (rate = 1).
+portfolio:
+  base_currency: EUR
+  eur_pairs:
+    USD: "EURUSD=X"
+    GBP: "EURGBP=X"
+    CHF: "EURCHF=X"
+    DKK: "EURDKK=X"
+    JPY: "EURJPY=X"
+    HKD: "EURHKD=X"
+
 # --- Ingestion scheduling (cron; overridable via env) ----------------
 schedule:
   prices_cron: "*/15 * * * *"           # every 15 minutes
@@ -201,6 +223,7 @@ schedule:
   alerts_cron: "*/10 * * * *"           # alert evaluation every 10 min (M8)
   macro_cron: "30 22 * * *"             # FRED macro series: once/day (M9)
   decision_cron: "0 0 * * *"            # decision board assembly: after macro/options (M9)
+  fundamentals_cron: "0 8 * * 1"        # quarterly fundamentals history + tone: weekly Mon 08:00
   experiment_cron: "*/5 * * * *"        # event experiment: opens/closes paper at delays (every 5 min)
   prospects_cron: "20 0 * * *"          # multi-horizon prospects: once/day (distributions move slowly)
 

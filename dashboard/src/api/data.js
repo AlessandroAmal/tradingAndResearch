@@ -39,6 +39,12 @@ export async function fetchUpcomingEvents(limit = 25) {
     .limit(limit)
 }
 
+// Real portfolio: the long book (holdings table). Separate from trade positions.
+export async function fetchHoldings() {
+  if (!isConfigured) return NOT_CONFIGURED
+  return supabase.from('holdings').select('*').order('symbol')
+}
+
 export async function fetchPositions(status = 'open') {
   if (!isConfigured) return NOT_CONFIGURED
   let q = supabase.from('positions').select('*').order('opened_at', { ascending: false })

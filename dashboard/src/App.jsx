@@ -21,6 +21,7 @@ import StatusStrip from './components/StatusStrip'
 import MarketsOverview from './components/MarketsOverview'
 import { PaperPositions } from './components/PaperMonitor'
 import ConcentrationWarning from './components/ConcentrationWarning'
+import PortfolioReal from './components/PortfolioReal'
 import ExperimentResults from './pages/ExperimentResults'
 import DecisionBench from './pages/DecisionBench'
 import Expectancy from './pages/Expectancy'
@@ -53,7 +54,7 @@ export default function App() {
   // Information architecture (AUDIT §6): 5 sections + Guida, each answering ONE
   // question. Multi-view sections carry a light in-section sub-nav (state only).
   const [primary, setPrimary] = useState('mercati')     // mercati|asset|decidi|portafoglio|ricerca|guida
-  const [portTab, setPortTab] = useState('posizioni')   // posizioni | andamento | alert
+  const [portTab, setPortTab] = useState('posizioni')   // posizioni | reale | andamento | alert
   const [ricercaTab, setRicercaTab] = useState('backtest') // backtest | calibrazione | esperimento
   const [decisionSymbol, setDecisionSymbol] = useState(null) // opened from the overview
   const [assetSymbol, setAssetSymbol] = useState(null)       // symbol shown in ASSET (drives the chart)
@@ -84,12 +85,15 @@ export default function App() {
     // Per-instrument last close + daily change (small N).
     const withChange = await Promise.all(
       instrumentRows.map(async (i) => {
-        const { data, error } = await fetchPrices(i.id, 2)
+        const { data, error } = await fetchPrices(i.id, 5)
         if (error || !data || data.length === 0) {
           return { ...i, last: null, changePct: null }
         }
-        const closes = data.slice().reverse().map((r) => r.close)
-        const last = closes.at(-1)
+        // Ascending, dropping null closes: a partial current-day bar (pre-market /
+        // not-yet-finalised) can have a null close and must NOT read as "n/d" for
+        // a liquid instrument — use the last REAL close.
+        const closes = data.slice().reverse().map((r) => r.close).filter((c) => c != null)
+        const last = closes.at(-1) ?? null
         const { pct } = dailyChange(closes)
         return { ...i, last, changePct: pct }
       }),
@@ -252,6 +256,10 @@ export default function App() {
       )}
 
       {primary === 'mercati' && (
+        <PortfolioReal instruments={instruments} priceBySymbol={priceBySymbol} onOpenAsset={openDecision} />
+      )}
+
+      {primary === 'mercati' && (
         <MarketsOverview refreshKey={refreshKey} onOpen={openDecision} nowMs={nowMs} />
       )}
 
@@ -341,6 +349,7 @@ export default function App() {
             onGuide={() => setPrimary('guida')} />
           <nav className="nav subnav" aria-label="Sezione portafoglio">
             {portBtn('posizioni', 'Posizioni & rischio')}
+            {portBtn('reale', 'Portafoglio reale')}
             {portBtn('andamento', 'Andamento & review')}
             {portBtn('alert', 'Alert')}
           </nav>
@@ -404,6 +413,10 @@ export default function App() {
                 </div>
               </main>
             </>
+          )}
+
+          {portTab === 'reale' && (
+            <PortfolioReal instruments={instruments} priceBySymbol={priceBySymbol} onOpenAsset={openDecision} />
           )}
 
           {portTab === 'andamento' && (

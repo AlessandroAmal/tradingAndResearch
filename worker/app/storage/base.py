@@ -38,6 +38,69 @@ class Storage(Protocol):
         quantity/avg_price (those are user-owned and must be preserved)."""
         ...
 
+    def upsert_holding(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert or update a real-portfolio holding by symbol (full row incl.
+        quantity/avg_price/currency/isin/buy_date/note). Returns the stored row."""
+        ...
+
+    def delete_holding(self, symbol: str) -> None:
+        """Remove a holding by symbol (user-confirmed in the UI)."""
+        ...
+
+    # --- ISIN → ticker map (real portfolio) -----------------------
+    def upsert_isin_map(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Persist a confirmed ISIN↔ticker mapping (by isin, else by ticker)."""
+        ...
+
+    def get_isin_map(self, isin: str) -> dict[str, Any] | None:
+        """Look up a mapping by ISIN, or None."""
+        ...
+
+    def find_isin_by_ticker(self, ticker: str) -> dict[str, Any] | None:
+        """Look up a mapping by ticker (case-insensitive), or None."""
+        ...
+
+    def list_isin_map(self) -> list[dict[str, Any]]:
+        """All stored ISIN↔ticker mappings."""
+        ...
+
+    # --- fundamentals history + valuation + tone -----------------
+    def upsert_fundamentals_history(self, rows: list[dict[str, Any]]) -> None:
+        """Upsert quarterly fundamentals rows (unique symbol + period_end)."""
+        ...
+
+    def get_fundamentals_history(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        """Last N quarters for a symbol, newest first."""
+        ...
+
+    def upsert_valuation_snapshot(self, row: dict[str, Any]) -> None:
+        """Upsert one valuation snapshot (unique symbol + as_of_date)."""
+        ...
+
+    def get_valuation_history(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        """Accumulated valuation snapshots for a symbol, newest first."""
+        ...
+
+    def upsert_tone_reading(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Upsert one tone reading (unique symbol + period_end)."""
+        ...
+
+    def get_tone_readings(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        """Recent tone readings for a symbol, newest first."""
+        ...
+
+    def get_tone_reading(self, symbol: str, period_end: str) -> dict[str, Any] | None:
+        """A specific quarter's tone reading, or None."""
+        ...
+
+    def upsert_transcript(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Store a user-provided earnings-call transcript (unique symbol+period_end)."""
+        ...
+
+    def get_transcript(self, symbol: str, period_end: str) -> dict[str, Any] | None:
+        """Fetch a stored transcript, or None."""
+        ...
+
     # --- prices ---------------------------------------------------
     def upsert_prices(self, rows: list[dict[str, Any]]) -> None:
         """Insert/update OHLCV rows (unique on instrument_id + ts)."""

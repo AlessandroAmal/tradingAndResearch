@@ -182,6 +182,48 @@ class AIRequest(BaseModel):
     level: float | None = None   # optional user price level for P(above/below)
 
 
+class ResolveRequest(BaseModel):
+    query: str                   # an ISIN or a ticker
+
+
+class HoldingRequest(BaseModel):
+    ticker: str
+    isin: str | None = None
+    name: str | None = None
+    currency: str | None = None
+    asset_class: str | None = None
+    exchange: str | None = None
+    quantity: float = 0.0
+    avg_price: float | None = None
+    avg_price_currency: str | None = None    # default EUR (account currency)
+    buy_date: str | None = None
+    note: str | None = None
+
+
+class DeleteHoldingRequest(BaseModel):
+    symbol: str
+
+
+class TranscriptRequest(BaseModel):
+    symbol: str
+    text: str
+    period_label: str | None = None   # e.g. "2026-Q2"; default = latest quarter
+
+
+class EditHoldingRequest(BaseModel):
+    id: str
+    quantity: float | None = None
+    avg_price: float | None = None
+    avg_price_currency: str | None = None
+    currency: str | None = None
+    buy_date: str | None = None
+    note: str | None = None
+    needs_review: bool | None = None
+    ticker: str | None = None      # a corrected ticker (re-resolves + re-prices)
+    isin: str | None = None
+    name: str | None = None
+
+
 # --- health ----------------------------------------------------------
 @app.get("/health")
 def health() -> dict[str, Any]:
@@ -293,6 +335,67 @@ def prospects_calibrate() -> dict[str, Any]:
 @app.get("/prospects/calibrate/status", dependencies=[Depends(require_token)])
 def prospects_calibrate_status() -> dict[str, Any]:
     return job_status("prospects_calibrate")
+
+
+# --- /portfolio (REAL holdings by ISIN — READ-ONLY on markets) -------
+@app.post("/isin/resolve", dependencies=[Depends(require_token)])
+def isin_resolve(body: ResolveRequest) -> dict[str, Any]:
+    """Resolve an ISIN or ticker to candidate(s). Never writes; the UI confirms
+    name+currency before a holding is saved."""
+    from .portfolio import resolve_symbol
+    from .providers.lookup import build_lookup_provider
+    cfg, storage = _cfg(), _storage()
+    lookup = build_lookup_provider(cfg.raw.get("lookup_provider", "yahoo"))
+    return resolve_symbol(storage, lookup, body.query)
+
+
+@app.post("/portfolio/holding", dependencies=[Depends(require_token)])
+def portfolio_holding(body: HoldingRequest) -> dict[str, Any]:
+    """Add/update a real holding: bootstrap instrument+prices+FX pair, persist the
+    ISIN mapping, upsert the holding. No order is ever placed."""
+    from .portfolio import save_holding
+    from .providers.lookup import build_lookup_provider
+    cfg, storage = _cfg(), _storage()
+    price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    lookup = build_lookup_provider(cfg.raw.get("lookup_provider", "yahoo"))
+    try:
+        return save_holding(cfg, storage, price_provider, lookup, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/portfolio/holding/delete", dependencies=[Depends(require_token)])
+def portfolio_holding_delete(body: DeleteHoldingRequest) -> dict[str, Any]:
+    _storage().delete_holding(body.symbol)
+    return {"deleted": body.symbol}
+
+
+@app.post("/fundamentals/transcript", dependencies=[Depends(require_token)])
+def fundamentals_transcript(body: TranscriptRequest) -> dict[str, Any]:
+    """Read the tone from a user-provided earnings-call transcript (PAID: one Haiku
+    call). Stores the transcript + the reading. Still qualitative; no score."""
+    if not (body.text and len(body.text.strip()) >= 200):
+        raise HTTPException(status_code=400, detail="Trascrizione troppo corta o vuota.")
+    if not _cfg().ai_enabled:
+        raise HTTPException(status_code=503, detail="Layer AI non abilitato.")
+    from .ingestion.fundamentals_job import read_tone_from_transcript
+    from .providers.tone import build_tone_provider
+    cfg, storage = _cfg(), _storage()
+    tone = build_tone_provider("haiku", build_ai_client(), cfg.tone_model)
+    return read_tone_from_transcript(storage, tone, body.symbol, body.text, body.period_label)
+
+
+@app.post("/portfolio/holding/edit", dependencies=[Depends(require_token)])
+def portfolio_holding_edit(body: EditHoldingRequest) -> dict[str, Any]:
+    """Edit one holding (quantity/carico/valuta/data/nota/verificato and, if the
+    ISIN resolution was wrong, the ticker). No order is ever placed."""
+    from .portfolio import edit_holding
+    from .providers.lookup import build_lookup_provider
+    cfg, storage = _cfg(), _storage()
+    price_provider = build_price_provider(cfg.providers.get("prices", "yfinance"))
+    lookup = build_lookup_provider(cfg.raw.get("lookup_provider", "yahoo"))
+    return edit_holding(cfg, storage, price_provider, lookup, body.id,
+                        body.model_dump(exclude={"id"}, exclude_none=True))
 
 
 # --- /decision/{instrument}/ai (PAID) --------------------------------

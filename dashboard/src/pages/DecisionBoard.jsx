@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchDecisionBoards, fetchDecisionBoard, fetchProspects } from '../api/data'
-import { generateAi, apiConfigured } from '../api/control'
+import { generateAi, submitTranscript, apiConfigured } from '../api/control'
 import { probAbove } from '../lib/options'
 import { fmtNum, fmtPct, countdown, relativeTime, pluralize } from '../lib/format'
 import InfoTip from '../components/InfoTip'
@@ -329,6 +329,8 @@ export default function DecisionBoard({ initialSymbol = null, instruments, setti
               <DualLens lenses={board.lenses} boardNote={board.board_note} />
               <FullPicturePanel fp={board.full_picture} />
               <FundamentalsPanel f={board.fundamentals} />
+              <TrajectoryPanel history={board.fundamentals.history} />
+              <TonePanel tone={board.tone} symbol={board.symbol} quarters={board.fundamentals.history?.quarters} />
               <EarningsPanel f={board.fundamentals} fx={board.fx_signals} nowMs={nowMs} />
               <AnalystsPanel a={board.fundamentals.analysts} last={board.last} />
             </Fold>
@@ -1163,8 +1165,9 @@ function FullPicturePanel({ fp }) {
 
 // Valuation indicator — descriptive (where the multiple sits vs ITSELF), never a
 // direction. Percentile bar when a P/E history was reconstructed, else a band.
-function ValuationIndicator({ ctx }) {
+function ValuationIndicator({ ctx, asOf }) {
   if (!ctx || ctx.pe == null) return null
+  const own = ctx.own_history
   return (
     <div className="val-indicator">
       {ctx.percentile != null ? (
@@ -1172,10 +1175,16 @@ function ValuationIndicator({ ctx }) {
           caption={`Valutazione vs la propria storia · ${ctx.band} (n=${ctx.n})`} />
       ) : (
         <p className="muted small">
-          Valutazione: <strong>{ctx.band}</strong> (P/E {ctx.basis} {fmtNum(ctx.pe, 0)}; storia P/E insufficiente per un percentile)
+          Valutazione: <strong>{ctx.band}</strong> (P/E {ctx.basis} {fmtNum(ctx.pe, 0)}; storia P/E ricostruita insufficiente per un percentile)
         </p>
       )}
-      <p className="muted small">{ctx.note} — non una previsione.</p>
+      {own && own.percentile != null && (
+        <p className="muted small">Vs la PROPRIA storia <strong>accumulata</strong> (n={own.n}): <strong>{own.band}</strong> — percentile {Math.round(own.percentile * 100)}%.</p>
+      )}
+      {own && own.percentile == null && (own.n || 0) > 0 && (
+        <p className="muted small">Storia valutazioni in accumulo (n={own.n}); il percentile «vs sé stessa» — e il tassello valutazione 3-5a nelle Prospettive — si riempie coi prossimi run.</p>
+      )}
+      <p className="muted small">{ctx.note} — non una previsione. Fonte: yfinance{asOf ? ` · al ${new Date(asOf).toLocaleDateString()}` : ''} (base P/E {ctx.basis}).</p>
     </div>
   )
 }
@@ -1195,7 +1204,7 @@ function FundamentalsPanel({ f }) {
         <Stat label="P/S" value={numOrNa(val.ps)} />
         <Stat label="P/B" value={numOrNa(val.pb)} />
       </div>
-      <ValuationIndicator ctx={val.context} />
+      <ValuationIndicator ctx={val.context} asOf={f.as_of} />
       <p className="muted small">{readValuation(val)}</p>
 
       <h3 className="ctx-h muted small">Crescita &amp; qualità</h3>
@@ -1219,6 +1228,151 @@ function FundamentalsPanel({ f }) {
       </div>
       <p className="muted small">{readCash(c)}</p>
       <p className="muted small caveat">{f.note}</p>
+    </section>
+  )
+}
+
+// Tiny inline sparkline (oldest→newest); colour by first→last direction.
+function Sparkline({ series, width = 68, height = 20 }) {
+  const clean = (series || []).filter((v) => v != null)
+  if (clean.length < 2) return <span className="muted small">—</span>
+  const lo = Math.min(...clean), hi = Math.max(...clean), rng = hi - lo || 1
+  const n = series.length
+  const pts = series.map((v, i) => (v == null ? null : `${((i / (n - 1)) * width).toFixed(1)},${(height - ((v - lo) / rng) * height).toFixed(1)}`)).filter(Boolean).join(' ')
+  const up = clean[clean.length - 1] >= clean[0]
+  return (
+    <svg width={width} height={height} className="sparkline" role="img" aria-label="traiettoria">
+      <polyline points={pts} className={up ? 'spark-up' : 'spark-down'} fill="none" />
+    </svg>
+  )
+}
+
+function fmtDelta(delta, kind) {
+  if (!delta || delta.abs == null) return { text: '—', cls: 'muted' }
+  const cls = delta.abs > 0 ? 'pos' : delta.abs < 0 ? 'neg' : 'muted'
+  if (kind === 'ratio') return { text: `${delta.abs >= 0 ? '+' : ''}${(delta.abs * 100).toFixed(1)}pp`, cls }
+  if (delta.rel != null) return { text: fmtPct(delta.rel * 100), cls }
+  return { text: `${delta.abs >= 0 ? '+' : ''}${fmtBig(delta.abs)}`, cls }
+}
+
+// Balance-sheet TRAJECTORY: current + QoQ/YoY deltas + sparkline, inflections up top.
+function TrajectoryPanel({ history }) {
+  if (!history || !history.metrics) return null
+  const { metrics, quarters, n } = history
+  const ORDER = ['revenue', 'net_income', 'gross_margin', 'operating_margin', 'net_margin', 'fcf', 'cash', 'debt', 'eps']
+  const rows = ORDER.map((k) => metrics[k]).filter((m) => m && (m.current != null || (m.sparkline || []).some((v) => v != null)))
+  if (rows.length === 0) return null
+  const inflections = rows.filter((m) => m.inflection)
+  const span = quarters?.length ? `${quarters[0]} → ${quarters[quarters.length - 1]}` : ''
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Traiettoria dei bilanci <InfoTip text={FPH.traiettoria?.text} label={FPH.traiettoria?.label} /></h2>
+        <span className="muted small">QoQ · YoY · sparkline · {n} trim.</span>
+      </header>
+      {inflections.length > 0 && (
+        <div className="conc-block">
+          {inflections.map((m) => (
+            <p key={m.label} className="gate-line gate-warn"><span className="gate-tag">⚑ inflessione</span> <strong>{m.label}</strong> {m.inflection_note}</p>
+          ))}
+        </div>
+      )}
+      <div className="risk-table-wrap">
+        <table className="risk-table">
+          <thead><tr><th>Metrica</th><th>Attuale</th><th>QoQ</th><th>YoY</th><th>Traiettoria {span && <span className="muted small">({span})</span>}</th></tr></thead>
+          <tbody>
+            {rows.map((m) => {
+              const qoq = fmtDelta(m.qoq, m.kind), yoy = fmtDelta(m.yoy, m.kind)
+              return (
+                <tr key={m.label} className={m.inflection ? 'review-row' : ''}>
+                  <td>{m.label}</td>
+                  <td>{m.current == null ? '—' : m.kind === 'ratio' ? pctOrNa(m.current) : fmtBig(m.current)}</td>
+                  <td className={qoq.cls}>{qoq.text}</td>
+                  <td className={yoy.cls}>{yoy.text}</td>
+                  <td><Sparkline series={m.sparkline} /></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small caveat">Traiettoria dei bilanci — contesto, già nota al mercato. Le inflessioni (margine che gira, FCF che cambia segno, debito che accelera) sono da leggere, non una previsione.</p>
+    </section>
+  )
+}
+
+// Tone of communications — qualitative language read per quarter, honest about
+// gaps. If a transcript can't be fetched automatically, the user can PASTE one
+// (downloaded from the company's IR site) and we read it.
+const TONE_LABEL = "Lettura qualitativa del linguaggio; l'impatto sul titolo NON è assunto — verrà misurato come fattore candidato quando lo storico basterà."
+function TonePanel({ tone, symbol, quarters = [] }) {
+  const [override, setOverride] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [period, setPeriod] = useState(quarters.length ? quarters[quarters.length - 1] : '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const latest = override || (tone && tone[0]) || null
+  const evaluable = latest?.evaluable
+
+  const submit = async () => {
+    if (text.trim().length < 200) { setErr('Trascrizione troppo corta (incolla il testo completo).'); return }
+    setBusy(true); setErr(null)
+    const { data, error } = await submitTranscript(symbol, text, period)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setOverride({ ...data.reading, period_label: data.period_label })
+    setOpen(false); setText('')
+  }
+
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Tono delle comunicazioni <InfoTip text={FPH.tono?.text} label={FPH.tono?.label} /></h2>
+        <span className="muted small">come parla il management{latest?.period_label ? ` · ${latest.period_label}` : ''}</span>
+      </header>
+      {evaluable ? (
+        <>
+          <div className="stat-grid">
+            <Stat label="Guidance" value={latest.guidance || '—'} />
+            <Stat label="Cautela / fiducia" value={latest.caution_confidence || '—'} />
+            <Stat label="Trimestre" value={latest.period_label || '—'} />
+          </div>
+          {latest.summary && <p className="muted small">{latest.summary}</p>}
+          {latest.changes_vs_prior && <p className="muted small"><strong>Cosa è cambiato:</strong> {latest.changes_vs_prior}</p>}
+          {(latest.themes_new?.length > 0 || latest.themes_gone?.length > 0) && (
+            <p className="muted small">
+              {latest.themes_new?.length > 0 && <>Temi nuovi: <strong>{latest.themes_new.join(', ')}</strong>. </>}
+              {latest.themes_gone?.length > 0 && <>Spariti: <strong>{latest.themes_gone.join(', ')}</strong>.</>}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="honest-note small">Tono: <strong>non valutabile</strong> {latest?.period_label ? `per ${latest.period_label} ` : ''}(nessuna trascrizione accessibile). Nessuna lettura inventata — ma puoi <strong>caricare la trascrizione</strong> qui sotto.</p>
+      )}
+
+      {apiConfigured && (
+        <div className="tone-upload">
+          <button className="ghost small" onClick={() => setOpen((o) => !o)}>{open ? 'Chiudi' : '＋ Carica trascrizione della call'}</button>
+          {open && (
+            <div className="resolved-box">
+              <p className="muted small">Scarica la trascrizione dal sito IR dell'azienda (es. Microsoft → Investor Relations → Earnings → «Earnings Call Transcript») e incolla il testo qui.</p>
+              {quarters.length > 0 && (
+                <label className="muted small">Trimestre
+                  <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+                    {quarters.slice().reverse().map((q) => <option key={q} value={q}>{q}</option>)}
+                  </select></label>
+              )}
+              <textarea rows={7} value={text} onChange={(e) => setText(e.target.value)} placeholder="Incolla qui la trascrizione completa della earnings call…" />
+              <div className="form-actions">
+                <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Analizzo…' : '🔎 Analizza tono (Haiku)'}</button>
+              </div>
+              {err && <p className="error">{err}</p>}
+            </div>
+          )}
+        </div>
+      )}
+      <p className="muted small caveat">{TONE_LABEL}</p>
     </section>
   )
 }

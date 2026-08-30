@@ -807,3 +807,17 @@ button.ov-row:hover { background: var(--bg-elevated); border-color: transparent;
 .risk-table.heatmap td.pos { background: color-mix(in srgb, var(--pos) 16%, transparent); font-weight: 600; }
 .risk-table.heatmap td.neg { background: color-mix(in srgb, var(--neg) 16%, transparent); font-weight: 600; }
 .risk-table.heatmap td { transition: background 0.1s; }
+
+/* --- real portfolio --------------------------------------------------- */
+.fx-exposure { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.conc-block { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.resolved-box { margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.candidate { display: block; width: 100%; text-align: left; margin-bottom: 4px; }
+.neg-row td { background: color-mix(in srgb, var(--neg) 7%, transparent); }
+.review-row td { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.verify-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+.sparkline { display: inline-block; vertical-align: middle; }
+.sparkline .spark-up { stroke: var(--pos); stroke-width: 1.5; }
+.sparkline .spark-down { stroke: var(--neg); stroke-width: 1.5; }
+.tone-upload { margin-top: 8px; }
+.tone-upload textarea { width: 100%; margin-top: 6px; font-family: inherit; resize: vertical; }

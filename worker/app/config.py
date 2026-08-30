@@ -148,6 +148,10 @@ class AppConfig:
         return dict(self.raw.get("prospects", {}) or {})
 
     @property
+    def portfolio(self) -> dict[str, Any]:
+        return dict(self.raw.get("portfolio", {}) or {})
+
+    @property
     def set_aside_per_day(self) -> float:
         return float(self.risk.get("set_aside_per_day", 100.0))
 
@@ -171,6 +175,16 @@ class AppConfig:
     @property
     def alerts_cron(self) -> str:
         return os.getenv("ALERTS_CRON", self.schedule.get("alerts_cron", "*/10 * * * *"))
+
+    @property
+    def fundamentals_cron(self) -> str:
+        # weekly: quarterly statements move slowly; accumulate history + read tone.
+        return os.getenv("FUNDAMENTALS_CRON", self.schedule.get("fundamentals_cron", "0 8 * * 1"))
+
+    @property
+    def tone_model(self) -> str:
+        # cheap qualitative language read — Haiku by default.
+        return os.getenv("ANTHROPIC_TONE_MODEL", self.ai.get("tone_model", self.tagging_model))
 
     # --- backtest bench --------------------------------------------
     @property

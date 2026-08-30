@@ -3,6 +3,7 @@ from .base import FundamentalsProvider
 from .yfinance_provider import (
     YFinanceFundamentalsProvider,
     parse_fundamentals,
+    parse_quarterly,
     valuation_context,
 )
 
@@ -10,6 +11,7 @@ __all__ = [
     "FundamentalsProvider",
     "YFinanceFundamentalsProvider",
     "parse_fundamentals",
+    "parse_quarterly",
     "valuation_context",
     "build_fundamentals_provider",
 ]
